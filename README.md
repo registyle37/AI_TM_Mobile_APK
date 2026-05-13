@@ -1,21 +1,28 @@
-# AI TM Trainer Mobile v2.5
+# AI TM Trainer Mobile v3 Voice
 
-## v2.5 수정 내용
-- "어떤 말씀인지 구체적으로..." 류의 반복 답변 차단
-- 서버가 generic 답변을 반환해도 앱에서 고객유형별 답변으로 교체
-- session_id가 -1이어도 customer_type_name, position_code를 /api/chat에 함께 전송
-- 앱 자체 fallback 답변을 고객유형/발화의도 기반으로 강화
-- 자료/팀장/재통화/가격/신뢰/바쁨/거절 의도를 구분해 답변
-- 답변 후보를 여러 개로 나누어 반복감 감소
+## 핵심 변경
+- Android SpeechRecognizer 제거
+- 시스템 음성인식 팝업/띠롱 소리 제거
+- MediaRecorder 직접 녹음
+- 침묵 감지 후 서버로 음성 파일 전송
+- 서버 STT → AI 고객 답변 → 서버 TTS → 앱에서 음성 재생
+- OpenAI API 키가 없으면 서버 응답 텍스트를 앱 로컬 TTS로 재생
 
-## 적용 방법
-기존 GitHub Repository에 아래 파일/폴더를 덮어쓰기 업로드하세요.
+## 함께 필요한 서버
+AI_TM_Admin_Voice_V3_Update.zip을 관리자 서버에 먼저 적용해야 합니다.
 
+필수 서버 API:
+- POST /api/voice/session/start
+- POST /api/voice/turn
+- POST /api/voice/session/end
+
+## GitHub 적용
+기존 AI_TM_Mobile_APK Repository에 아래를 덮어쓰기 업로드:
 .github
 app
 build.gradle
 settings.gradle
 README.md
 
-업로드 후:
+그 후:
 Actions → Build Android APK → Run workflow
