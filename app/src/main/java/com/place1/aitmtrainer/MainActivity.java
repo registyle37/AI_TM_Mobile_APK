@@ -35,24 +35,28 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private EditText serverEdit, employeeEdit;
     private Spinner positionSpinner, customerTypeSpinner, difficultySpinner;
     private TextView statusView, callStateView, callMetaView, goalView, timerView, micHintView;
-    private Button pauseButton, startButton, loadButton;
+    private Button pauseButton;
 
     private JSONArray positions = new JSONArray();
     private JSONArray customerTypes = new JSONArray();
 
     private String currentPositionCode = "newbie";
     private Integer sessionId = null;
-    private boolean paused = false, aiSpeaking = false, finishing = false;
+    private boolean paused = false, aiSpeaking = false, finishing = false, isListening = false, isSending = false;
     private Handler handler = new Handler();
     private TextToSpeech tts;
     private SpeechRecognizer speechRecognizer;
     private SharedPreferences prefs;
+
     private long callStartMillis = 0L;
     private Runnable timerRunnable;
+    private Runnable listenTimeoutRunnable;
+    private String lastPartialText = "";
+    private int listenSeq = 0;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    protected void onCreate(Bundle b) {
+        super.onCreate(b);
         prefs = getSharedPreferences("ai_tm_trainer", MODE_PRIVATE);
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -71,17 +75,17 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
             tts.setLanguage(Locale.KOREAN);
             tts.setSpeechRate(1.0f);
             tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override public void onStart(String utteranceId) {
+                @Override public void onStart(String id) {
                     aiSpeaking = true;
                     stopListening();
                 }
 
-                @Override public void onDone(String utteranceId) {
+                @Override public void onDone(String id) {
                     aiSpeaking = false;
                     if (!paused && !finishing) handler.postDelayed(() -> startListeningSilently(), 1500);
                 }
 
-                @Override public void onError(String utteranceId) {
+                @Override public void onError(String id) {
                     aiSpeaking = false;
                     if (!paused && !finishing) handler.postDelayed(() -> startListeningSilently(), 1500);
                 }
@@ -94,40 +98,77 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
             Toast.makeText(this, "이 기기에서 음성인식을 사용할 수 없습니다.", Toast.LENGTH_LONG).show();
             return;
         }
+
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         speechRecognizer.setRecognitionListener(new RecognitionListener() {
             @Override public void onReadyForSpeech(Bundle params) {
+                isListening = true;
                 setCallState("듣는 중");
                 setStatus("말씀하세요");
                 setMicHint("상담원 음성을 듣고 있습니다");
             }
+
             @Override public void onBeginningOfSpeech() {
                 setMicHint("말씀을 인식하고 있습니다");
             }
+
             @Override public void onRmsChanged(float rmsdB) {}
             @Override public void onBufferReceived(byte[] buffer) {}
+
             @Override public void onEndOfSpeech() {
+                isListening = false;
                 setCallState("AI 생각 중");
-                setStatus("음성 분석 중");
+                setStatus("발화 확정 중");
                 setMicHint("잠시만 기다려주세요");
+
+                final int seq = listenSeq;
+                handler.postDelayed(() -> {
+                    if (seq == listenSeq && !isSending && lastPartialText.trim().length() > 0) {
+                        submitRecognizedText(lastPartialText.trim());
+                    }
+                }, 900);
             }
+
             @Override public void onError(int error) {
-                if (paused || finishing || aiSpeaking) return;
+                isListening = false;
+                if (paused || finishing || aiSpeaking || isSending) return;
+
+                if (lastPartialText.trim().length() > 0) {
+                    submitRecognizedText(lastPartialText.trim());
+                    return;
+                }
+
                 setCallState("듣는 중");
                 setStatus("다시 듣는 중");
                 setMicHint("말씀이 없으면 계속 듣고 있습니다");
                 handler.postDelayed(() -> startListeningSilently(), 900);
             }
+
             @Override public void onResults(Bundle results) {
+                isListening = false;
                 ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 String text = (matches != null && !matches.isEmpty()) ? matches.get(0).trim() : "";
-                if (text.length() == 0) {
-                    if (!paused && !finishing) handler.postDelayed(() -> startListeningSilently(), 900);
-                    return;
+
+                if (text.length() == 0) text = lastPartialText.trim();
+
+                if (text.length() > 0) {
+                    submitRecognizedText(text);
+                } else if (!paused && !finishing) {
+                    handler.postDelayed(() -> startListeningSilently(), 900);
                 }
-                sendEmployeeMessage(text);
             }
-            @Override public void onPartialResults(Bundle partialResults) {}
+
+            @Override public void onPartialResults(Bundle partialResults) {
+                ArrayList<String> matches = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                if (matches != null && !matches.isEmpty()) {
+                    lastPartialText = matches.get(0).trim();
+                    if (lastPartialText.length() > 0) {
+                        setStatus("음성 인식 중");
+                        setMicHint("말씀을 듣고 있습니다");
+                    }
+                }
+            }
+
             @Override public void onEvent(int eventType, Bundle params) {}
         });
     }
@@ -165,7 +206,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         serverEdit.setText(prefs.getString("server_url", "http://172.30.0.53:8031"));
         setupPanel.addView(serverEdit);
 
-        loadButton = button("서버 연결 / 포지션 / 유형 불러오기", true);
+        Button loadButton = button("서버 연결 / 포지션 / 유형 불러오기", true);
         loadButton.setOnClickListener(v -> { saveServerUrl(); loadInitialData(); });
         setupPanel.addView(loadButton);
 
@@ -193,7 +234,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         goalView = infoBox("서버 연결 버튼을 눌러 포지션과 고객유형을 불러오세요.");
         setupPanel.addView(goalView);
 
-        startButton = button("시작하기", true);
+        Button startButton = button("시작하기", true);
         startButton.setTextSize(18);
         startButton.setOnClickListener(v -> startSession());
         setupPanel.addView(startButton);
@@ -222,23 +263,26 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         micHintView.setPadding(0, dp(12), 0, dp(28));
         callPanel.addView(micHintView);
 
-        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI가 말한 뒤 자동으로 상담원 음성을 듣습니다.");
+        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI가 말한 뒤 자동으로 상담원 음성을 듣습니다.\n발화가 길어도 최대 8초까지 듣고 자동으로 답변합니다.");
         guide.setGravity(Gravity.CENTER);
         callPanel.addView(guide);
 
-        LinearLayout btnRow = new LinearLayout(this);
-        btnRow.setOrientation(LinearLayout.HORIZONTAL);
-        btnRow.setPadding(0, dp(24), 0, 0);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(24), 0, 0);
 
         pauseButton = button("일시정지", false);
         pauseButton.setOnClickListener(v -> togglePause());
-        btnRow.addView(pauseButton, new LinearLayout.LayoutParams(0, dp(52), 1));
+        row.addView(pauseButton, new LinearLayout.LayoutParams(0, dp(52), 1));
+
         Space space = new Space(this);
-        btnRow.addView(space, new LinearLayout.LayoutParams(dp(10), 1));
+        row.addView(space, new LinearLayout.LayoutParams(dp(10), 1));
+
         Button finishButton = button("종료/평가", true);
         finishButton.setOnClickListener(v -> finishSession());
-        btnRow.addView(finishButton, new LinearLayout.LayoutParams(0, dp(52), 1));
-        callPanel.addView(btnRow, new LinearLayout.LayoutParams(-1, -2));
+        row.addView(finishButton, new LinearLayout.LayoutParams(0, dp(52), 1));
+
+        callPanel.addView(row, new LinearLayout.LayoutParams(-1, -2));
 
         statusView = new TextView(this);
         statusView.setText("상태: 준비 중");
@@ -250,7 +294,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     }
 
     private TextView centeredText(int size, int color, boolean bold) {
-        TextView v=new TextView(this);
+        TextView v = new TextView(this);
         v.setGravity(Gravity.CENTER);
         v.setTextSize(size);
         v.setTextColor(color);
@@ -279,7 +323,12 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         return e;
     }
 
-    private Spinner spinner() { Spinner s=new Spinner(this); s.setMinimumHeight(dp(48)); s.setBackground(inputBg()); return s; }
+    private Spinner spinner() {
+        Spinner s = new Spinner(this);
+        s.setMinimumHeight(dp(48));
+        s.setBackground(inputBg());
+        return s;
+    }
 
     private Button button(String text, boolean primary) {
         Button b = new Button(this);
@@ -290,7 +339,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     }
 
     private TextView infoBox(String text) {
-        TextView v=new TextView(this);
+        TextView v = new TextView(this);
         v.setText(text); v.setTextSize(14); v.setTextColor(Color.rgb(71,85,105));
         v.setPadding(dp(14),dp(12),dp(14),dp(12)); v.setBackground(infoBg());
         return v;
@@ -310,30 +359,43 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private void setMicHint(String text){runOnUiThread(() -> micHintView.setText(text));}
 
     private JSONObject requestJson(String path, String method, JSONObject body) throws Exception {
-        URL url=new URL(server()+path);
-        HttpURLConnection conn=(HttpURLConnection)url.openConnection();
+        URL url = new URL(server() + path);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod(method);
         conn.setRequestProperty("Content-Type","application/json; charset=UTF-8");
-        conn.setConnectTimeout(10000); conn.setReadTimeout(60000);
-        if(body!=null){conn.setDoOutput(true);OutputStream out=conn.getOutputStream();out.write(body.toString().getBytes("UTF-8"));out.flush();out.close();}
-        InputStream is=(conn.getResponseCode()>=200&&conn.getResponseCode()<300)?conn.getInputStream():conn.getErrorStream();
-        String text=readAll(is);
-        if(conn.getResponseCode()<200||conn.getResponseCode()>=300)throw new RuntimeException(text);
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(60000);
+
+        if(body != null){
+            conn.setDoOutput(true);
+            OutputStream out = conn.getOutputStream();
+            out.write(body.toString().getBytes("UTF-8"));
+            out.flush();
+            out.close();
+        }
+
+        InputStream is = (conn.getResponseCode()>=200 && conn.getResponseCode()<300) ? conn.getInputStream() : conn.getErrorStream();
+        String text = readAll(is);
+        if(conn.getResponseCode()<200 || conn.getResponseCode()>=300) throw new RuntimeException(text);
         return new JSONObject(text);
     }
 
     private JSONArray requestJsonArray(String path) throws Exception {
-        URL url=new URL(server()+path);
-        HttpURLConnection conn=(HttpURLConnection)url.openConnection();
-        conn.setRequestMethod("GET"); conn.setConnectTimeout(10000); conn.setReadTimeout(60000);
+        URL url = new URL(server() + path);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(60000);
         return new JSONArray(readAll(conn.getInputStream()));
     }
 
     private String readAll(InputStream is) throws Exception {
-        BufferedReader br=new BufferedReader(new InputStreamReader(is,"UTF-8"));
-        StringBuilder sb=new StringBuilder(); String line;
-        while((line=br.readLine())!=null)sb.append(line);
-        br.close(); return sb.toString();
+        BufferedReader br = new BufferedReader(new InputStreamReader(is,"UTF-8"));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while((line=br.readLine())!=null) sb.append(line);
+        br.close();
+        return sb.toString();
     }
 
     private void loadInitialData() {
@@ -341,21 +403,28 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
             try {
                 saveServerUrl();
                 requestJson("/api/health","GET",null);
-                positions=requestJsonArray("/api/positions");
-                ArrayList<String> positionNames=new ArrayList<>();
+                positions = requestJsonArray("/api/positions");
+                ArrayList<String> names = new ArrayList<>();
+
                 for(int i=0;i<positions.length();i++){
                     JSONObject p=positions.getJSONObject(i);
-                    if(p.optInt("is_active",1)==1)positionNames.add(p.getString("name"));
+                    if(p.optInt("is_active",1)==1) names.add(p.getString("name"));
                 }
+
                 runOnUiThread(() -> {
-                    positionSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, positionNames));
+                    positionSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, names));
                     positionSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
-                        @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id){
-                            try{currentPositionCode=findPositionCodeByName(String.valueOf(positionSpinner.getSelectedItem()));loadCustomerTypes();updateGoalText();}catch(Exception ignored){}
+                        @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int pos, long id){
+                            try{
+                                currentPositionCode = findPositionCodeByName(String.valueOf(positionSpinner.getSelectedItem()));
+                                loadCustomerTypes();
+                                updateGoalText();
+                            }catch(Exception ignored){}
                         }
                         @Override public void onNothingSelected(android.widget.AdapterView<?> parent){}
                     });
                 });
+
                 setStatus("서버 연결 완료");
                 loadCustomerTypes();
             } catch(Exception e) {
@@ -365,57 +434,111 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         }).start();
     }
 
-    private String findPositionCodeByName(String name)throws Exception{
-        for(int i=0;i<positions.length();i++){JSONObject p=positions.getJSONObject(i);if(name.equals(p.getString("name")))return p.getString("code");}
+    private String findPositionCodeByName(String name) throws Exception {
+        for(int i=0;i<positions.length();i++){
+            JSONObject p=positions.getJSONObject(i);
+            if(name.equals(p.getString("name"))) return p.getString("code");
+        }
         return "newbie";
     }
 
     private JSONObject currentPositionObject(){
-        try{for(int i=0;i<positions.length();i++){JSONObject p=positions.getJSONObject(i);if(currentPositionCode.equals(p.getString("code")))return p;}}catch(Exception ignored){}
+        try{
+            for(int i=0;i<positions.length();i++){
+                JSONObject p=positions.getJSONObject(i);
+                if(currentPositionCode.equals(p.getString("code"))) return p;
+            }
+        }catch(Exception ignored){}
         return null;
     }
 
     private void updateGoalText(){
         try{
-            JSONObject p=currentPositionObject(); if(p==null)return;
-            JSONArray goals=p.optJSONArray("goals"); ArrayList<String> names=new ArrayList<>();
-            if(goals!=null){for(int i=0;i<goals.length();i++){JSONObject g=goals.getJSONObject(i);if(g.optInt("is_active",1)==1&&g.optInt("is_core",1)==1)names.add(g.optString("title",""));}}
+            JSONObject p=currentPositionObject();
+            if(p==null) return;
+
+            JSONArray goals=p.optJSONArray("goals");
+            ArrayList<String> names=new ArrayList<>();
+
+            if(goals!=null){
+                for(int i=0;i<goals.length();i++){
+                    JSONObject g=goals.getJSONObject(i);
+                    if(g.optInt("is_active",1)==1 && g.optInt("is_core",1)==1) names.add(g.optString("title",""));
+                }
+            }
+
             runOnUiThread(() -> goalView.setText("목표: "+join(names," · ")));
         }catch(Exception ignored){}
     }
 
-    private String join(ArrayList<String> arr,String sep){StringBuilder sb=new StringBuilder();for(int i=0;i<arr.size();i++){if(i>0)sb.append(sep);sb.append(arr.get(i));}return sb.toString();}
+    private String join(ArrayList<String> arr,String sep){
+        StringBuilder sb=new StringBuilder();
+        for(int i=0;i<arr.size();i++){
+            if(i>0) sb.append(sep);
+            sb.append(arr.get(i));
+        }
+        return sb.toString();
+    }
 
     private void loadCustomerTypes(){
         new Thread(() -> {
             try{
                 customerTypes=requestJsonArray("/api/customer-types?position="+currentPositionCode);
                 ArrayList<String> names=new ArrayList<>();
-                for(int i=0;i<customerTypes.length();i++){JSONObject item=customerTypes.getJSONObject(i);if(item.optInt("is_active",1)==1)names.add(item.getString("name"));}
+
+                for(int i=0;i<customerTypes.length();i++){
+                    JSONObject item=customerTypes.getJSONObject(i);
+                    if(item.optInt("is_active",1)==1) names.add(item.getString("name"));
+                }
+
                 runOnUiThread(() -> {
                     customerTypeSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, names));
                     setStatus("포지션/유형 불러오기 완료");
                 });
-            }catch(Exception e){setStatus("유형 불러오기 실패: "+e.getMessage());}
+            }catch(Exception e){
+                setStatus("유형 불러오기 실패: "+e.getMessage());
+            }
         }).start();
     }
 
     private int selectedCustomerTypeId() throws Exception {
         String selectedName=String.valueOf(customerTypeSpinner.getSelectedItem());
-        for(int i=0;i<customerTypes.length();i++){JSONObject item=customerTypes.getJSONObject(i);if(selectedName.equals(item.getString("name")))return item.getInt("id");}
+        for(int i=0;i<customerTypes.length();i++){
+            JSONObject item=customerTypes.getJSONObject(i);
+            if(selectedName.equals(item.getString("name"))) return item.getInt("id");
+        }
         return 1;
     }
 
-    private String selectedCustomerTypeName(){Object o=customerTypeSpinner.getSelectedItem();return o==null?"-":String.valueOf(o);}
-    private String selectedPositionName(){Object o=positionSpinner.getSelectedItem();return o==null?"-":String.valueOf(o);}
+    private String selectedCustomerTypeName(){
+        Object o=customerTypeSpinner.getSelectedItem();
+        return o==null?"-":String.valueOf(o);
+    }
+
+    private String selectedPositionName(){
+        Object o=positionSpinner.getSelectedItem();
+        return o==null?"-":String.valueOf(o);
+    }
 
     private void startSession(){
         String employee=employeeEdit.getText().toString().trim();
-        if(employee.isEmpty()){Toast.makeText(this,"이름을 입력하세요.",Toast.LENGTH_SHORT).show();return;}
-        if(positionSpinner.getSelectedItem()==null||customerTypeSpinner.getSelectedItem()==null){Toast.makeText(this,"서버 연결 버튼으로 포지션/유형을 먼저 불러오세요.",Toast.LENGTH_LONG).show();return;}
+
+        if(employee.isEmpty()){
+            Toast.makeText(this,"이름을 입력하세요.",Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if(positionSpinner.getSelectedItem()==null || customerTypeSpinner.getSelectedItem()==null){
+            Toast.makeText(this,"서버 연결 버튼으로 포지션/유형을 먼저 불러오세요.",Toast.LENGTH_LONG).show();
+            return;
+        }
 
         prefs.edit().putString("employee_name",employee).putString("server_url",server()).apply();
-        paused=false; finishing=false; sessionId=null; callStartMillis=System.currentTimeMillis();
+
+        paused=false;
+        finishing=false;
+        sessionId=null;
+        callStartMillis=System.currentTimeMillis();
 
         runOnUiThread(() -> {
             setupPanel.setVisibility(View.GONE);
@@ -434,6 +557,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
                 body.put("position_code",currentPositionCode);
                 body.put("customer_type_id",selectedCustomerTypeId());
                 body.put("difficulty",String.valueOf(difficultySpinner.getSelectedItem()));
+
                 JSONObject res=requestJson("/api/sessions/start","POST",body);
                 sessionId=res.getInt("session_id");
                 speakAi(res.getString("first_message"));
@@ -447,96 +571,208 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
     private String fallbackFirstMessage(){
         String name=selectedCustomerTypeName();
-        if(name.contains("바쁜"))return "네, 지금 바쁜데요.";
-        if(name.contains("의심"))return "네, 말씀하세요.";
-        if(name.contains("가격"))return "여보세요, 네.";
+        if(name.contains("바쁜")) return "네, 지금 바쁜데요.";
+        if(name.contains("의심")) return "네, 말씀하세요.";
+        if(name.contains("가격")) return "여보세요, 네.";
         return "여보세요?";
     }
 
     private void startTimer(){
-        if(timerRunnable!=null)handler.removeCallbacks(timerRunnable);
-        timerRunnable=new Runnable(){@Override public void run(){long sec=Math.max(0,(System.currentTimeMillis()-callStartMillis)/1000);timerView.setText(String.format(Locale.KOREA,"%02d:%02d",sec/60,sec%60));if(!finishing)handler.postDelayed(this,1000);}};
+        if(timerRunnable!=null) handler.removeCallbacks(timerRunnable);
+
+        timerRunnable=new Runnable(){
+            @Override public void run(){
+                long sec=Math.max(0,(System.currentTimeMillis()-callStartMillis)/1000);
+                timerView.setText(String.format(Locale.KOREA,"%02d:%02d",sec/60,sec%60));
+                if(!finishing) handler.postDelayed(this,1000);
+            }
+        };
+
         handler.post(timerRunnable);
     }
 
     private void togglePause(){
         paused=!paused;
-        if(paused){stopListening();setCallState("일시정지");setStatus("일시정지됨");setMicHint("다시 시작을 누르면 이어집니다");pauseButton.setText("다시 시작");}
-        else{pauseButton.setText("일시정지");setStatus("다시 듣기 시작");startListeningSilently();}
+
+        if(paused){
+            stopListening();
+            setCallState("일시정지");
+            setStatus("일시정지됨");
+            setMicHint("다시 시작을 누르면 이어집니다");
+            pauseButton.setText("다시 시작");
+        }else{
+            pauseButton.setText("일시정지");
+            setStatus("다시 듣기 시작");
+            startListeningSilently();
+        }
     }
 
     private void startListeningSilently(){
-        if(paused||finishing||aiSpeaking||speechRecognizer==null)return;
+        if(paused || finishing || aiSpeaking || speechRecognizer==null || isSending) return;
+
         try{
             stopListening();
+
+            lastPartialText="";
+            isListening=true;
+            listenSeq++;
+            final int seq=listenSeq;
+
             Intent intent=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"ko-KR");
-            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,false);
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,3000);
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,2500);
+            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,true);
+            intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,3);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,2500);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,2200);
             intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,3000);
+
             speechRecognizer.startListening(intent);
-        }catch(Exception e){setStatus("음성 인식 재시도 중");handler.postDelayed(() -> startListeningSilently(),1200);}
+
+            if(listenTimeoutRunnable!=null) handler.removeCallbacks(listenTimeoutRunnable);
+            listenTimeoutRunnable = () -> {
+                if(seq == listenSeq && isListening && !paused && !finishing && !aiSpeaking && !isSending){
+                    if(lastPartialText.trim().length()>0){
+                        submitRecognizedText(lastPartialText.trim());
+                    }else{
+                        stopListening();
+                        setCallState("듣는 중");
+                        setStatus("다시 듣는 중");
+                        handler.postDelayed(() -> startListeningSilently(),700);
+                    }
+                }
+            };
+            handler.postDelayed(listenTimeoutRunnable, 8000);
+
+        }catch(Exception e){
+            setStatus("음성 인식 재시도 중");
+            handler.postDelayed(() -> startListeningSilently(),1200);
+        }
     }
 
-    private void stopListening(){try{if(speechRecognizer!=null)speechRecognizer.cancel();}catch(Exception ignored){}}
+    private void stopListening(){
+        try{
+            if(listenTimeoutRunnable!=null) handler.removeCallbacks(listenTimeoutRunnable);
+            if(speechRecognizer!=null) speechRecognizer.cancel();
+        }catch(Exception ignored){}
+        isListening=false;
+    }
+
+    private void submitRecognizedText(String text){
+        if(text==null) return;
+        text=text.trim();
+        if(text.length()==0) return;
+        if(isSending || paused || finishing || aiSpeaking) return;
+
+        isSending=true;
+        stopListening();
+        sendEmployeeMessage(text);
+    }
 
     private void sendEmployeeMessage(String text){
-        stopListening();setCallState("AI 생각 중");setStatus("AI 고객 답변 생성 중");setMicHint("AI가 답변을 준비하고 있습니다");
+        setCallState("AI 생각 중");
+        setStatus("AI 고객 답변 생성 중");
+        setMicHint("AI가 답변을 준비하고 있습니다");
+
         new Thread(() -> {
             try{
-                JSONObject body=new JSONObject();body.put("session_id",sessionId);body.put("message",text);
+                JSONObject body=new JSONObject();
+                body.put("session_id",sessionId);
+                body.put("message",text);
+
                 JSONObject res=requestJson("/api/chat","POST",body);
+                isSending=false;
                 speakAi(res.getString("reply"));
-            }catch(Exception e){speakAi(fallbackReply(text));}
+            }catch(Exception e){
+                isSending=false;
+                speakAi(fallbackReply(text));
+            }
         }).start();
     }
 
     private String fallbackReply(String text){
         String type=selectedCustomerTypeName();
+
         if(type.contains("가격")){
-            if(text.contains("자료")||text.contains("확인"))return "그러면 자료로 먼저 볼 수 있다는 말씀이세요?";
-            if(text.contains("팀장"))return "팀장님이 짧게 설명해주실 수 있으면 들어볼게요.";
-            if(text.contains("시간")||text.contains("내일")||text.contains("오후"))return "그럼 그 시간에 다시 통화하면 되는 건가요?";
+            if(text.contains("자료")||text.contains("확인")) return "그러면 자료로 먼저 볼 수 있다는 말씀이세요?";
+            if(text.contains("팀장")) return "팀장님이 짧게 설명해주실 수 있으면 들어볼게요.";
+            if(text.contains("시간")||text.contains("내일")||text.contains("오후")) return "그럼 그 시간에 다시 통화하면 되는 건가요?";
             return "비용이 드는 거면 대략적인 범위는 알아야 판단할 수 있을 것 같습니다.";
         }
+
         if(type.contains("의심")){
-            if(text.contains("자료")||text.contains("사례"))return "그럼 자료에 실제 확인할 수 있는 내용이 있나요?";
-            if(text.contains("팀장"))return "팀장님이 직접 설명해주시면 짧게는 들어볼게요.";
+            if(text.contains("자료")||text.contains("사례")) return "그럼 자료에 실제 확인할 수 있는 내용이 있나요?";
+            if(text.contains("팀장")) return "팀장님이 직접 설명해주시면 짧게는 들어볼게요.";
             return "예전에 광고를 해봤는데 효과를 잘 못 봐서요. 이번에는 뭘 보고 판단하면 되나요?";
         }
+
         if(type.contains("바쁜")){
-            if(text.contains("20초")||text.contains("짧게"))return "네, 그럼 짧게만 말씀해보세요.";
-            if(text.contains("자료"))return "그럼 자료로 보내주세요. 보고 필요하면 연락드릴게요.";
+            if(text.contains("20초")||text.contains("짧게")) return "네, 그럼 짧게만 말씀해보세요.";
+            if(text.contains("자료")) return "그럼 자료로 보내주세요. 보고 필요하면 연락드릴게요.";
             return "지금 바빠서요. 핵심만 짧게 말씀해주세요.";
         }
+
         return "네, 그럼 제 상황에서는 어떤 부분을 먼저 보면 될까요?";
     }
 
     private void speakAi(String text){
         runOnUiThread(() -> {
-            aiSpeaking=true;stopListening();setCallState("AI 고객 말하는 중");setStatus("AI 고객 응답 중");setMicHint("AI 고객이 말하고 있습니다");
+            aiSpeaking=true;
+            isSending=false;
+            stopListening();
+            setCallState("AI 고객 말하는 중");
+            setStatus("AI 고객 응답 중");
+            setMicHint("AI 고객이 말하고 있습니다");
             tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"ai_customer_"+System.currentTimeMillis());
         });
     }
 
     private void finishSession(){
-        finishing=true;paused=true;stopListening();stopAudio();
+        finishing=true;
+        paused=true;
+        stopListening();
+        stopAudio();
+
         long duration=Math.max(0,(System.currentTimeMillis()-callStartMillis)/1000);
-        setCallState("평가 중");setStatus("평가 리포트 생성 중");setMicHint("훈련을 종료합니다");
+
+        setCallState("평가 중");
+        setStatus("평가 리포트 생성 중");
+        setMicHint("훈련을 종료합니다");
+
         new Thread(() -> {
-            try{if(sessionId!=null&&sessionId>0)requestJson("/api/sessions/"+sessionId+"/finish","POST",new JSONObject());}catch(Exception ignored){}
-            runOnUiThread(() -> {Toast.makeText(this,"훈련 종료 / 통화시간 "+duration+"초",Toast.LENGTH_LONG).show();setupPanel.setVisibility(View.VISIBLE);callPanel.setVisibility(View.GONE);});
-            setStatus(duration>=180?"유효 훈련 완료":"3분 미만 종료: 관리자 확인 대상");
+            try{
+                if(sessionId!=null && sessionId>0) requestJson("/api/sessions/"+sessionId+"/finish","POST",new JSONObject());
+            }catch(Exception ignored){}
+
+            runOnUiThread(() -> {
+                Toast.makeText(this,"훈련 종료 / 통화시간 "+duration+"초",Toast.LENGTH_LONG).show();
+                setupPanel.setVisibility(View.VISIBLE);
+                callPanel.setVisibility(View.GONE);
+            });
+
+            setStatus(duration>=180 ? "유효 훈련 완료" : "3분 미만 종료: 관리자 확인 대상");
         }).start();
     }
 
-    private void stopAudio(){try{if(tts!=null)tts.stop();}catch(Exception ignored){}}
+    private void stopAudio(){
+        try{
+            if(tts!=null) tts.stop();
+        }catch(Exception ignored){}
+    }
 
-    @Override protected void onDestroy(){
-        super.onDestroy();finishing=true;stopListening();
-        if(speechRecognizer!=null){speechRecognizer.destroy();speechRecognizer=null;}
-        stopAudio();if(tts!=null)tts.shutdown();
+    @Override
+    protected void onDestroy(){
+        super.onDestroy();
+        finishing=true;
+        stopListening();
+
+        if(speechRecognizer!=null){
+            speechRecognizer.destroy();
+            speechRecognizer=null;
+        }
+
+        stopAudio();
+
+        if(tts!=null) tts.shutdown();
     }
 }

@@ -1,6 +1,4 @@
-plugins {
-    id 'com.android.application'
-}
+plugins { id 'com.android.application' }
 
 android {
     namespace 'com.place1.aitmtrainer'
@@ -10,10 +8,9 @@ android {
         applicationId 'com.place1.aitmtrainer'
         minSdk 26
         targetSdk 35
-        versionCode 4
-        versionName '1.3'
+        versionCode 5
+        versionName '1.4'
     }
 }
 
-dependencies {
-}
+dependencies {}
