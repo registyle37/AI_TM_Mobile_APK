@@ -1,36 +1,20 @@
-# AI TM Trainer Mobile v2.1 - Build Fix
+# AI TM Trainer Mobile v2.2
 
-- 빌드 오류 수정: `import android.content.Intent;` 추가
-- v2 음성인식/디자인 개선 유지
+## v2.2 수정 내용
 
-# AI TM Trainer Mobile v2 - GitHub Actions APK 자동 빌드용
+- 시작하기 로딩 지연 수정
+  - 관리자 서버에 아직 없는 `/api/sessions/start`를 기다리지 않고 즉시 통화 화면으로 전환합니다.
+  - 현재는 앱 내부 임시 응답으로 빠르게 테스트합니다.
 
-## v2 수정 내용
+- 음성 듣기 시간 개선
+  - AI 음성 종료 후 1.5초 뒤 듣기 시작
+  - 음성 입력 최소 길이 3초 기준으로 완화
+  - 침묵 감지 시간을 2.5~3.5초로 증가
+  - 부분 인식 결과가 있으면 최종 결과가 없어도 상담원 발화로 사용
 
-- Android 기본 음성인식 팝업 방식 제거
-- SpeechRecognizer 내부 인식 방식으로 변경
-- "인식하지 못했습니다" 팝업 최소화
-- 말이 없거나 짧게 인식되면 조용히 다시 듣기
-- AI가 말하는 동안 마이크 중지
-- AI 음성 종료 후 약 0.9초 뒤 자동 듣기 시작
-- 전체 UI 디자인 재적용
-  - 카드형 설정 화면
-  - 그라데이션 버튼
-  - 통화 타이머
-  - 통화 상태 표시
-  - 마이크 상태 표시
-- Node.js 24 경고 대응 환경변수 추가
-
-## 앱 기능
-
-- 서버 주소 입력/저장
-- 관리자페이지 서버 연결
-- 포지션 불러오기
-- 고객유형 불러오기
-- 난이도 선택
-- 시작하기
-- 자동 음성 대화
-- 종료/평가
+- 불필요한 안내 문구 제거
+  - “말씀이 너무 짧아…” 문구를 줄이고 “계속 듣는 중”으로 표시
+  - 인식 실패 시 팝업/토스트 없이 조용히 재청취
 
 ## GitHub 적용 방법
 
@@ -44,22 +28,17 @@ settings.gradle
 README.md
 ```
 
-특히 아래 파일이 중요합니다.
+특히 아래 파일이 반드시 변경되어야 합니다.
 
 ```text
 app/src/main/java/com/place1/aitmtrainer/MainActivity.java
+app/build.gradle
 .github/workflows/build-apk.yml
 ```
 
-업로드 후 Actions에서 `Build Android APK`를 실행하면 새 APK가 생성됩니다.
+업로드 후 Actions에서 `Build Android APK`를 다시 실행하세요.
 
-## 현재 한계
+## 참고
 
-아직 관리자 서버에 실제 대화 API가 없으면 앱은 임시 응답으로 대화 흐름만 테스트합니다.
-다음 단계에서 관리자 서버에 아래 API를 추가하면 실제 저장/분석까지 연결됩니다.
-
-```text
-POST /api/sessions/start
-POST /api/chat
-POST /api/sessions/{id}/finish
-```
+아직 관리자 서버에 실제 대화 API가 없기 때문에 `USE_SERVER_CHAT_API=false`로 되어 있습니다.
+관리자 서버에 실제 AI 대화 API를 붙이면 이 값을 `true`로 바꾸면 됩니다.

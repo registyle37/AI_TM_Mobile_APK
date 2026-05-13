@@ -30,6 +30,10 @@ import java.util.Locale;
 
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
     private static final int REQ_AUDIO = 100;
+    // v2.2: 관리자 서버에 실제 대화 API가 붙기 전까지는 앱 내부 즉시 응답으로 테스트합니다.
+    // 시작/응답 시 서버 API를 기다리지 않아 로딩이 빨라집니다.
+    private static final boolean USE_SERVER_CHAT_API = false;
+    private String lastPartialText = "";
     private LinearLayout setupPanel, callPanel;
     private EditText serverEdit, employeeEdit;
     private Spinner positionSpinner, customerTypeSpinner, difficultySpinner;
@@ -65,7 +69,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
             tts.setSpeechRate(1.0f);
             tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                 @Override public void onStart(String id) { aiSpeaking = true; }
-                @Override public void onDone(String id) { aiSpeaking = false; if (!paused && !finishing) handler.postDelayed(() -> startListeningSilently(), 900); }
+                @Override public void onDone(String id) { aiSpeaking = false; if (!paused && !finishing) handler.postDelayed(() -> startListeningSilently(), 1500); }
                 @Override public void onError(String id) { aiSpeaking = false; if (!paused && !finishing) handler.postDelayed(() -> startListeningSilently(), 1200); }
             });
         }
@@ -75,28 +79,35 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         if (!SpeechRecognizer.isRecognitionAvailable(this)) return;
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         speechRecognizer.setRecognitionListener(new RecognitionListener() {
-            @Override public void onReadyForSpeech(Bundle params) { setCallState("듣는 중"); setStatus("말씀하세요"); setMicHint("상담원 음성을 듣고 있습니다"); }
-            @Override public void onBeginningOfSpeech() { setMicHint("말씀을 인식하고 있습니다"); }
+            @Override public void onReadyForSpeech(Bundle params) { lastPartialText = ""; setCallState("듣는 중"); setStatus("말씀하세요"); setMicHint("충분히 말씀하세요. 잠깐의 침묵은 기다립니다"); }
+            @Override public void onBeginningOfSpeech() { setMicHint("말씀을 듣고 있습니다. 끝까지 말씀하세요"); }
             @Override public void onRmsChanged(float rmsdB) {}
             @Override public void onBufferReceived(byte[] buffer) {}
-            @Override public void onEndOfSpeech() { setCallState("AI 생각 중"); setStatus("음성 분석 중"); setMicHint("잠시만 기다려주세요"); }
+            @Override public void onEndOfSpeech() { setCallState("AI 생각 중"); setStatus("음성 분석 중"); setMicHint("말씀을 정리하고 있습니다"); }
             @Override public void onError(int error) {
                 if (paused || finishing || aiSpeaking) return;
-                if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_CLIENT) {
-                    setCallState("듣는 중"); setStatus("다시 듣는 중"); setMicHint("말씀이 없거나 짧아 다시 듣습니다");
-                    handler.postDelayed(() -> startListeningSilently(), 700);
-                } else {
-                    setStatus("음성 인식 대기 중");
-                    handler.postDelayed(() -> startListeningSilently(), 1200);
+
+                // v2.2: 짧게 끊겼거나 최종 인식 실패가 나와도 팝업/토스트 없이 조용히 재청취합니다.
+                // 단, 부분 인식 문장이 있으면 그 문장을 상담원 발화로 사용합니다.
+                if (lastPartialText != null && lastPartialText.trim().length() >= 3) {
+                    String captured = lastPartialText.trim();
+                    lastPartialText = "";
+                    sendEmployeeMessage(captured);
+                    return;
                 }
+
+                setCallState("듣는 중");
+                setStatus("계속 듣는 중");
+                setMicHint("편하게 이어서 말씀하세요");
+                handler.postDelayed(() -> startListeningSilently(), 900);
             }
             @Override public void onResults(Bundle results) {
                 ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 String text = (matches != null && !matches.isEmpty()) ? matches.get(0).trim() : "";
-                if (text.length() == 0) { if (!paused && !finishing) handler.postDelayed(() -> startListeningSilently(), 700); return; }
+                if (text.length() == 0) { if (lastPartialText != null && lastPartialText.trim().length() >= 3) { text = lastPartialText.trim(); } else { if (!paused && !finishing) handler.postDelayed(() -> startListeningSilently(), 900); return; } }
                 sendEmployeeMessage(text);
             }
-            @Override public void onPartialResults(Bundle partialResults) {}
+            @Override public void onPartialResults(Bundle partialResults) { ArrayList<String> p = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION); if (p != null && !p.isEmpty()) lastPartialText = p.get(0); }
             @Override public void onEvent(int eventType, Bundle params) {}
         });
     }
@@ -156,13 +167,56 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private int selectedCustomerTypeId()throws Exception{String n=String.valueOf(customerTypeSpinner.getSelectedItem());for(int i=0;i<customerTypes.length();i++){JSONObject item=customerTypes.getJSONObject(i);if(n.equals(item.getString("name")))return item.getInt("id");}return 1;}
     private String selectedCustomerTypeName(){Object o=customerTypeSpinner.getSelectedItem();return o==null?"-":String.valueOf(o);}private String selectedPositionName(){Object o=positionSpinner.getSelectedItem();return o==null?"-":String.valueOf(o);}
 
-    private void startSession(){String emp=employeeEdit.getText().toString().trim();if(emp.isEmpty()){Toast.makeText(this,"이름을 입력하세요.",Toast.LENGTH_SHORT).show();return;}prefs.edit().putString("employee_name",emp).putString("server_url",server()).apply();paused=false;finishing=false;sessionId=null;callStartMillis=System.currentTimeMillis();setStatus("훈련 시작 중");new Thread(()->{try{JSONObject body=new JSONObject();body.put("employee_name",emp);body.put("position_code",currentPositionCode);body.put("customer_type_id",selectedCustomerTypeId());body.put("difficulty",String.valueOf(difficultySpinner.getSelectedItem()));JSONObject res;try{res=requestJson("/api/sessions/start","POST",body);}catch(Exception e){res=new JSONObject();res.put("session_id",-1);res.put("first_message",fallbackFirstMessage());}sessionId=res.getInt("session_id");String first=res.getString("first_message");runOnUiThread(()->{setupPanel.setVisibility(View.GONE);callPanel.setVisibility(View.VISIBLE);callMetaView.setText(selectedPositionName()+" / "+selectedCustomerTypeName()+" / "+difficultySpinner.getSelectedItem());pauseButton.setText("일시정지");startTimer();});speakAi(first);}catch(Exception e){setStatus("훈련 시작 실패: "+e.getMessage());}}).start();}
+    private void startSession(){
+        String emp=employeeEdit.getText().toString().trim();
+        if(emp.isEmpty()){
+            Toast.makeText(this,"이름을 입력하세요.",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        prefs.edit().putString("employee_name",emp).putString("server_url",server()).apply();
+        paused=false;
+        finishing=false;
+        sessionId=-1;
+        callStartMillis=System.currentTimeMillis();
+
+        // v2.2 핵심 수정: 시작하기를 누르면 서버 대화 API를 기다리지 않고 즉시 통화 화면으로 진입합니다.
+        setupPanel.setVisibility(View.GONE);
+        callPanel.setVisibility(View.VISIBLE);
+        callMetaView.setText(selectedPositionName()+" / "+selectedCustomerTypeName()+" / "+difficultySpinner.getSelectedItem());
+        pauseButton.setText("일시정지");
+        startTimer();
+        setStatus("훈련 시작");
+        speakAi(fallbackFirstMessage());
+    }
     private String fallbackFirstMessage(){String n=selectedCustomerTypeName();if(n.contains("바쁜"))return "네, 지금 바쁜데요.";if(n.contains("의심"))return "네, 말씀하세요.";if(n.contains("가격"))return "여보세요, 네.";return "여보세요?";}
     private void startTimer(){if(timerRunnable!=null)handler.removeCallbacks(timerRunnable);timerRunnable=new Runnable(){@Override public void run(){long sec=Math.max(0,(System.currentTimeMillis()-callStartMillis)/1000);timerView.setText(String.format(Locale.KOREA,"%02d:%02d",sec/60,sec%60));if(!finishing)handler.postDelayed(this,1000);}};handler.post(timerRunnable);}    
     private void togglePause(){paused=!paused;if(paused){stopListening();setCallState("일시정지");setStatus("일시정지됨");setMicHint("다시 시작을 누르면 이어집니다");pauseButton.setText("다시 시작");}else{pauseButton.setText("일시정지");setStatus("다시 듣기 시작");startListeningSilently();}}
-    private void startListeningSilently(){if(paused||finishing||aiSpeaking||speechRecognizer==null)return;try{stopListening();Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"ko-KR");i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,false);i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,1400);i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,1000);i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,1200);speechRecognizer.startListening(i);}catch(Exception e){setStatus("음성 인식 재시도 중");handler.postDelayed(()->startListeningSilently(),1200);}}
+    private void startListeningSilently(){if(paused||finishing||aiSpeaking||speechRecognizer==null)return;try{stopListening();Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"ko-KR");i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,true);i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,3500);i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,2500);i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,3000);speechRecognizer.startListening(i);}catch(Exception e){setStatus("음성 인식 재시도 중");handler.postDelayed(()->startListeningSilently(),1200);}}
     private void stopListening(){try{if(speechRecognizer!=null)speechRecognizer.cancel();}catch(Exception ignored){}}
-    private void sendEmployeeMessage(String text){stopListening();setCallState("AI 생각 중");setStatus("AI 고객 답변 생성 중");setMicHint("AI가 답변을 준비하고 있습니다");new Thread(()->{try{JSONObject body=new JSONObject();body.put("session_id",sessionId);body.put("message",text);JSONObject res;try{res=requestJson("/api/chat","POST",body);}catch(Exception e){res=new JSONObject();res.put("reply",fallbackReply(text));}speakAi(res.getString("reply"));}catch(Exception e){setStatus("대화 오류: "+e.getMessage());if(!paused&&!finishing)handler.postDelayed(()->startListeningSilently(),1000);}}).start();}
+    private void sendEmployeeMessage(String text){
+        stopListening();
+        lastPartialText = "";
+        setCallState("AI 생각 중");
+        setStatus("AI 고객 답변 생성 중");
+        setMicHint("AI가 답변을 준비하고 있습니다");
+
+        if(!USE_SERVER_CHAT_API){
+            handler.postDelayed(() -> speakAi(fallbackReply(text)), 350);
+            return;
+        }
+
+        new Thread(()->{
+            try{
+                JSONObject body=new JSONObject();
+                body.put("session_id",sessionId);
+                body.put("message",text);
+                JSONObject res=requestJson("/api/chat","POST",body);
+                speakAi(res.getString("reply"));
+            }catch(Exception e){
+                speakAi(fallbackReply(text));
+            }
+        }).start();
+    }
     private String fallbackReply(String text){String type=selectedCustomerTypeName();if(type.contains("가격")){if(text.contains("자료")||text.contains("확인"))return "그러면 자료로 먼저 볼 수 있다는 말씀이세요?";if(text.contains("팀장"))return "팀장님이 짧게 설명해주실 수 있으면 들어볼게요.";if(text.contains("시간")||text.contains("내일")||text.contains("오후"))return "그럼 그 시간에 다시 통화하면 되는 건가요?";return "근데 이거 비용이 드는 거죠? 대략 어느 정도인지 알아야 판단할 수 있어요.";}if(type.contains("의심")){if(text.contains("자료")||text.contains("사례"))return "그럼 자료에 실제 확인할 수 있는 내용이 있나요?";if(text.contains("팀장"))return "팀장님이 직접 설명해주시면 짧게는 들어볼게요.";return "혹시 광고대행 쪽인가요? 예전에 맡겼다가 효과를 못 봐서요.";}if(type.contains("바쁜")){if(text.contains("20초")||text.contains("짧게"))return "네, 그럼 짧게만 말씀해보세요.";if(text.contains("자료"))return "그럼 자료로 보내주세요. 보고 필요하면 연락드릴게요.";return "지금 바빠서요. 핵심만 짧게 말씀해주세요.";}return "네, 어떤 내용인지 조금 더 말씀해보세요.";}
     private void speakAi(String text){runOnUiThread(()->{aiSpeaking=true;stopListening();setCallState("AI 고객 말하는 중");setStatus("AI 고객 응답 중");setMicHint("AI 고객이 말하고 있습니다");tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"ai_customer_"+System.currentTimeMillis());});}
     private void finishSession(){finishing=true;paused=true;stopListening();stopAudio();long duration=Math.max(0,(System.currentTimeMillis()-callStartMillis)/1000);setCallState("평가 중");setStatus("평가 리포트 생성 중");setMicHint("훈련을 종료합니다");new Thread(()->{try{if(sessionId!=null&&sessionId>0)requestJson("/api/sessions/"+sessionId+"/finish","POST",new JSONObject());}catch(Exception ignored){}runOnUiThread(()->{Toast.makeText(this,"훈련 종료 / 통화시간 "+duration+"초",Toast.LENGTH_LONG).show();setupPanel.setVisibility(View.VISIBLE);callPanel.setVisibility(View.GONE);});setStatus(duration>=180?"유효 훈련 완료":"3분 미만 종료: 관리자 확인 대상");}).start();}
