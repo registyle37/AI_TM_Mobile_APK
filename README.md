@@ -1,44 +1,19 @@
-# AI TM Trainer Mobile v2.2
+# AI TM Trainer Mobile v2.3
 
-## v2.2 수정 내용
+## 수정 내용
+- 포지션/고객유형 드롭다운 로딩 안정화
+- 서버 연결 실패 시 명확한 안내
+- 시작하기 전에 포지션/유형이 없으면 시작 차단
+- 관리자 서버의 실제 대화 API 사용
+- 관리자 서버 API 실패 시만 임시 응답 사용
+- 대화 응답 반복 감소
+- 음성 듣기 시간 3초 기준 유지
+- Android Studio 없이 GitHub Actions로 빌드
 
-- 시작하기 로딩 지연 수정
-  - 관리자 서버에 아직 없는 `/api/sessions/start`를 기다리지 않고 즉시 통화 화면으로 전환합니다.
-  - 현재는 앱 내부 임시 응답으로 빠르게 테스트합니다.
+## 함께 적용해야 하는 서버 업데이트
+관리자 서버 `AI_TM_Admin`에도 `AI_TM_Admin_Update_Mobile_Chat_API.zip`의 app.py를 덮어써야 실제 대화 API가 동작합니다.
 
-- 음성 듣기 시간 개선
-  - AI 음성 종료 후 1.5초 뒤 듣기 시작
-  - 음성 입력 최소 길이 3초 기준으로 완화
-  - 침묵 감지 시간을 2.5~3.5초로 증가
-  - 부분 인식 결과가 있으면 최종 결과가 없어도 상담원 발화로 사용
-
-- 불필요한 안내 문구 제거
-  - “말씀이 너무 짧아…” 문구를 줄이고 “계속 듣는 중”으로 표시
-  - 인식 실패 시 팝업/토스트 없이 조용히 재청취
-
-## GitHub 적용 방법
-
-기존 Repository에 아래 파일/폴더를 덮어쓰기 업로드하세요.
-
-```text
-.github
-app
-build.gradle
-settings.gradle
-README.md
-```
-
-특히 아래 파일이 반드시 변경되어야 합니다.
-
-```text
-app/src/main/java/com/place1/aitmtrainer/MainActivity.java
-app/build.gradle
-.github/workflows/build-apk.yml
-```
-
-업로드 후 Actions에서 `Build Android APK`를 다시 실행하세요.
-
-## 참고
-
-아직 관리자 서버에 실제 대화 API가 없기 때문에 `USE_SERVER_CHAT_API=false`로 되어 있습니다.
-관리자 서버에 실제 AI 대화 API를 붙이면 이 값을 `true`로 바꾸면 됩니다.
+추가되는 API:
+- POST /api/sessions/start
+- POST /api/chat
+- POST /api/sessions/{id}/finish
