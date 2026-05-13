@@ -1,3 +1,8 @@
+# AI TM Trainer Mobile v2.1 - Build Fix
+
+- 빌드 오류 수정: `import android.content.Intent;` 추가
+- v2 음성인식/디자인 개선 유지
+
 # AI TM Trainer Mobile v2 - GitHub Actions APK 자동 빌드용
 
 ## v2 수정 내용
