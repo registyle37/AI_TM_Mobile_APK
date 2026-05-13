@@ -60,11 +60,14 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private long silentStartMillis = 0L;
     private Runnable timerRunnable;
     private Runnable amplitudeRunnable;
+    private boolean speechDetected = false;
+    private int voiceHitCount = 0;
+    private int silenceHitCount = 0;
 
-    private final int AMP_THRESHOLD = 950;
-    private final int MIN_RECORD_MS = 1000;
-    private final int SILENCE_STOP_MS = 1050;
-    private final int MAX_RECORD_MS = 9000;
+    private final int AMP_THRESHOLD = 900;
+    private final int MIN_RECORD_MS = 2500;
+    private final int SILENCE_STOP_MS = 2100;
+    private final int MAX_RECORD_MS = 18000;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -102,7 +105,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("v3.1 빠른 응답 모드 · 실제 통화처럼 자연스럽게 진행");
+        sub.setText("v3.2 안정 대화 모드 · 말이 끝난 뒤 자연스럽게 응답");
         sub.setTextSize(14);
         sub.setTextColor(Color.rgb(100,116,139));
         sub.setPadding(0, dp(4), 0, dp(14));
@@ -178,7 +181,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         micHintView.setPadding(0, dp(12), 0, dp(28));
         callPanel.addView(micHintView);
 
-        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI 고객이 말한 뒤 자동으로 녹음됩니다.\n말이 끝나고 약 1초 조용하면 바로 응답을 준비합니다.");
+        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI 고객이 말한 뒤 자동으로 녹음됩니다.\n상담원이 말을 마치고 약 2초 정도 조용하면 응답을 준비합니다.");
         guide.setGravity(Gravity.CENTER);
         callPanel.addView(guide);
 
@@ -588,6 +591,9 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
             recording=true;
             recordStartMillis=System.currentTimeMillis();
             silentStartMillis=0;
+            speechDetected=false;
+            voiceHitCount=0;
+            silenceHitCount=0;
             setCallState("상담원 말하는 중");
             setStatus("녹음 중");
             setMicHint("말이 끝나면 자동으로 전송합니다");
@@ -604,24 +610,58 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         amplitudeRunnable=new Runnable(){
             @Override public void run(){
                 if(!recording||recorder==null)return;
+
                 long elapsed=System.currentTimeMillis()-recordStartMillis;
                 int amp=0;
                 try{amp=recorder.getMaxAmplitude();}catch(Exception ignored){}
-                if(elapsed>MIN_RECORD_MS){
+
+                // 실제 발화가 여러 번 감지되어야 speechDetected 처리
+                if(amp>=AMP_THRESHOLD){
+                    voiceHitCount++;
+                    silenceHitCount=0;
+                    if(voiceHitCount>=2){
+                        speechDetected=true;
+                        silentStartMillis=0;
+                        setMicHint("말씀을 듣고 있습니다");
+                    }
+                }else{
+                    if(speechDetected){
+                        silenceHitCount++;
+                    }
+                }
+
+                // 발화가 감지된 뒤에만 침묵 종료 판단
+                if(speechDetected && elapsed>MIN_RECORD_MS){
                     if(amp<AMP_THRESHOLD){
                         if(silentStartMillis==0)silentStartMillis=System.currentTimeMillis();
                     }else{
                         silentStartMillis=0;
                     }
+
                     if(silentStartMillis>0 && System.currentTimeMillis()-silentStartMillis>SILENCE_STOP_MS){
                         stopRecordingAndSend();
                         return;
                     }
                 }
-                if(elapsed>MAX_RECORD_MS){
+
+                // 아무 말도 하지 않은 상태는 서버로 보내지 않고 계속 듣기
+                if(!speechDetected && elapsed>6500){
+                    stopRecording();
+                    setCallState("듣는 중");
+                    setStatus("대기 중");
+                    setMicHint("말씀이 없으면 계속 기다립니다");
+                    if(!paused && !finishing && !aiPlaying && !sending){
+                        handler.postDelayed(() -> startRecording(),800);
+                    }
+                    return;
+                }
+
+                // 긴 발화는 최대 18초에서 자연스럽게 끊음
+                if(speechDetected && elapsed>MAX_RECORD_MS){
                     stopRecordingAndSend();
                     return;
                 }
+
                 handler.postDelayed(this,200);
             }
         };
@@ -652,8 +692,10 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         }catch(Exception ignored){}
         recording=false;
 
-        if(currentAudioFile==null||!currentAudioFile.exists()||currentAudioFile.length()<1000){
-            setStatus("음성이 너무 짧아 다시 듣습니다");
+        if(!speechDetected || currentAudioFile==null || !currentAudioFile.exists() || currentAudioFile.length()<3500){
+            setCallState("듣는 중");
+            setStatus("대기 중");
+            setMicHint("말씀이 없거나 너무 짧으면 계속 기다립니다");
             startRecordingAfterAi();
             return;
         }
@@ -663,7 +705,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private void sendAudioTurn(File file){
         sending=true;
         setCallState("고객 응답 준비 중");
-        setStatus("응답 준비 중");
+        setStatus("고객 응답 준비 중");
         setMicHint("잠시만 기다려주세요");
         new Thread(() -> {
             try{
