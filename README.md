@@ -1,31 +1,21 @@
-# AI TM Trainer Mobile v2.4
+# AI TM Trainer Mobile v2.5
 
-## v2.4 수정 내용
-
-- "계속 듣기만 하고 답변하지 않음" 문제 수정
-- SpeechRecognizer 부분 인식값 저장
-- 최종 결과가 없어도 부분 인식값이 있으면 서버로 전송
-- 최대 8초 듣고 자동 발화 확정
-- onEndOfSpeech 이후 0.9초 안에 결과가 없으면 부분 인식값으로 전송
-- 중복 전송 방지 플래그 추가
-- 관리자 서버 `/api/chat` 우선 사용
+## v2.5 수정 내용
+- "어떤 말씀인지 구체적으로..." 류의 반복 답변 차단
+- 서버가 generic 답변을 반환해도 앱에서 고객유형별 답변으로 교체
+- session_id가 -1이어도 customer_type_name, position_code를 /api/chat에 함께 전송
+- 앱 자체 fallback 답변을 고객유형/발화의도 기반으로 강화
+- 자료/팀장/재통화/가격/신뢰/바쁨/거절 의도를 구분해 답변
+- 답변 후보를 여러 개로 나누어 반복감 감소
 
 ## 적용 방법
-
 기존 GitHub Repository에 아래 파일/폴더를 덮어쓰기 업로드하세요.
 
-```text
 .github
 app
 build.gradle
 settings.gradle
 README.md
-```
 
 업로드 후:
-
-```text
 Actions → Build Android APK → Run workflow
-```
-
-빌드 성공 후 새 APK를 설치하세요.
