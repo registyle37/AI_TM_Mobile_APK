@@ -61,10 +61,10 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private Runnable timerRunnable;
     private Runnable amplitudeRunnable;
 
-    private final int AMP_THRESHOLD = 1200;
-    private final int MIN_RECORD_MS = 1800;
-    private final int SILENCE_STOP_MS = 1700;
-    private final int MAX_RECORD_MS = 12000;
+    private final int AMP_THRESHOLD = 950;
+    private final int MIN_RECORD_MS = 1000;
+    private final int SILENCE_STOP_MS = 1050;
+    private final int MAX_RECORD_MS = 9000;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -102,7 +102,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("v3 직접 녹음 방식 · 시스템 인식음 없이 실제 통화처럼 진행");
+        sub.setText("v3.1 빠른 응답 모드 · 실제 통화처럼 자연스럽게 진행");
         sub.setTextSize(14);
         sub.setTextColor(Color.rgb(100,116,139));
         sub.setPadding(0, dp(4), 0, dp(14));
@@ -178,7 +178,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         micHintView.setPadding(0, dp(12), 0, dp(28));
         callPanel.addView(micHintView);
 
-        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI 고객이 말한 뒤 자동으로 녹음됩니다.\n말이 끝나고 약 1.7초 조용하면 서버로 전송합니다.");
+        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI 고객이 말한 뒤 자동으로 녹음됩니다.\n말이 끝나고 약 1초 조용하면 바로 응답을 준비합니다.");
         guide.setGravity(Gravity.CENTER);
         callPanel.addView(guide);
 
@@ -525,7 +525,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
                 stopRecording();
                 stopPlayback();
                 setCallState("AI 고객 말하는 중");
-                setStatus("서버 음성 재생 중");
+                setStatus("고객 응답 중");
                 setMicHint("AI 고객이 말하고 있습니다");
                 player=new MediaPlayer();
                 player.setDataSource(this, Uri.parse(audioUrl));
@@ -556,7 +556,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
             aiPlaying=true;
             stopRecording();
             setCallState("AI 고객 말하는 중");
-            setStatus("로컬 음성 재생 중");
+            setStatus("고객 응답 중");
             setMicHint("AI 고객이 말하고 있습니다");
             localTts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"local_ai_"+System.currentTimeMillis());
             int delay=Math.max(1600,Math.min(9000,text.length()*130));
@@ -569,7 +569,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
     private void startRecordingAfterAi(){
         if(paused||finishing||aiPlaying||sending)return;
-        handler.postDelayed(() -> startRecording(),700);
+        handler.postDelayed(() -> startRecording(),350);
     }
 
     private void startRecording(){
@@ -662,9 +662,9 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
     private void sendAudioTurn(File file){
         sending=true;
-        setCallState("AI 생각 중");
-        setStatus("서버로 음성 전송 중");
-        setMicHint("AI 고객 답변을 준비하고 있습니다");
+        setCallState("고객 응답 준비 중");
+        setStatus("응답 준비 중");
+        setMicHint("잠시만 기다려주세요");
         new Thread(() -> {
             try{
                 JSONObject res=uploadAudio("/api/voice/turn",file);
