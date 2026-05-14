@@ -459,9 +459,9 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
     private void saveServerUrl(){prefs.edit().putString("server_url", server()).apply();}
     private String server(){return serverEdit.getText().toString().trim().replaceAll("/+$","");}
-    private void setStatus(String text){runOnUiThread(() -> statusView.setText("상태: "+text));}
-    private void setCallState(String text){runOnUiThread(() -> callStateView.setText(text));}
-    private void setMicHint(String text){runOnUiThread(() -> micHintView.setText(text));}
+    private void setStatus(String text){runOnUiThread(() -> { if(statusView!=null) statusView.setText("상태: "+text); });}
+    private void setCallState(String text){runOnUiThread(() -> { if(callStateView!=null) callStateView.setText(text); });}
+    private void setMicHint(String text){runOnUiThread(() -> { if(micHintView!=null) micHintView.setText(text); });}
 
     private JSONObject requestJson(String path, String method, JSONObject body) throws Exception {
         URL url = new URL(server()+path);
