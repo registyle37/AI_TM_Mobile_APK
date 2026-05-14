@@ -106,7 +106,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("v3.3 버튼 응답 모드 · 말한 뒤 누르면 즉시 답변");
+        sub.setText("v3.3.2 큰 답변 버튼 모드 · 말한 뒤 바로 누르기");
         sub.setTextSize(14);
         sub.setTextColor(Color.rgb(100,116,139));
         sub.setPadding(0, dp(4), 0, dp(14));
@@ -182,28 +182,28 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         micHintView.setPadding(0, dp(12), 0, dp(28));
         callPanel.addView(micHintView);
 
-        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI 고객이 말한 뒤 자동으로 녹음됩니다.\n상담원이 말한 뒤 답변 받기를 누르면 바로 응답을 준비합니다.");
+        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI가 말한 뒤 자동으로 녹음됩니다.\n상담원이 말한 뒤 큰 ‘답변 받기’ 버튼을 누르면 바로 응답을 준비합니다.");
         guide.setGravity(Gravity.CENTER);
         callPanel.addView(guide);
 
+        respondButton = button("답변 받기", true);
+        respondButton.setTextSize(22);
+        respondButton.setMinHeight(dp(72));
+        respondButton.setOnClickListener(v -> manualSendNow());
+        LinearLayout.LayoutParams respondParams = new LinearLayout.LayoutParams(-1, dp(72));
+        respondParams.setMargins(0, dp(24), 0, dp(8));
+        callPanel.addView(respondButton, respondParams);
+
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(24), 0, 0);
+        row.setPadding(0, dp(12), 0, 0);
 
         pauseButton = button("일시정지", false);
         pauseButton.setOnClickListener(v -> togglePause());
         row.addView(pauseButton, new LinearLayout.LayoutParams(0, dp(52), 1));
 
-        Space sp1 = new Space(this);
-        row.addView(sp1, new LinearLayout.LayoutParams(dp(8), 1));
-
-        respondButton = button("답변 받기", true);
-        respondButton.setTextSize(16);
-        respondButton.setOnClickListener(v -> manualSendNow());
-        row.addView(respondButton, new LinearLayout.LayoutParams(0, dp(52), 1));
-
-        Space sp2 = new Space(this);
-        row.addView(sp2, new LinearLayout.LayoutParams(dp(8), 1));
+        Space sp = new Space(this);
+        row.addView(sp, new LinearLayout.LayoutParams(dp(10), 1));
 
         Button finishButton = button("종료/평가", false);
         finishButton.setOnClickListener(v -> finishSession());
@@ -605,7 +605,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
             silenceHitCount=0;
             setCallState("상담원 말하는 중");
             setStatus("녹음 중");
-            setMicHint("말을 마친 뒤 답변 받기를 누르세요");
+            setMicHint("말을 마친 뒤 큰 답변 받기 버튼을 누르세요");
             monitorAmplitude();
         }catch(Exception e){
             recording=false;
@@ -631,12 +631,11 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
                         speechDetected=true;
                         setCallState("상담원 말하는 중");
                         setStatus("녹음 중");
-                        setMicHint("말을 마친 뒤 답변 받기를 누르세요");
+                        setMicHint("말을 마친 뒤 큰 답변 받기 버튼을 누르세요");
                     }
                 }
 
-                // v3.3: 버튼 방식에서는 침묵만으로 자동 전송하지 않습니다.
-                // 단, 너무 긴 녹음은 안전상 자동 전송합니다.
+                // v3.3.2: 침묵만으로 자동 전송하지 않습니다.
                 if(speechDetected && elapsed>MAX_RECORD_MS){
                     stopRecordingAndSend();
                     return;
@@ -682,7 +681,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
         setCallState("듣는 중");
         setStatus("녹음 시작");
-        setMicHint("말을 마친 뒤 답변 받기를 누르세요");
+        setMicHint("말을 마친 뒤 큰 답변 받기 버튼을 누르세요");
         startRecording();
     }
 
