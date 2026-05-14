@@ -7,7 +7,7 @@ android {
     defaultConfig {
         applicationId 'com.place1.aitmtrainer'
         minSdk 26
-        targetSdk 35
+        targetSdk 34
         versionCode 18
         versionName '3.4.1'
     }
