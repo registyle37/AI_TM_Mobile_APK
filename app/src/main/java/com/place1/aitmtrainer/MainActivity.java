@@ -182,7 +182,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         micHintView.setPadding(0, dp(12), 0, dp(28));
         callPanel.addView(micHintView);
 
-        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI 고객이 말한 뒤 자동으로 녹음됩니다.\n상담원이 말한 뒤 '답변 받기'를 누르면 바로 응답을 준비합니다.");
+        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI 고객이 말한 뒤 자동으로 녹음됩니다.\n상담원이 말한 뒤 답변 받기를 누르면 바로 응답을 준비합니다.");
         guide.setGravity(Gravity.CENTER);
         callPanel.addView(guide);
 
@@ -198,6 +198,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         row.addView(sp1, new LinearLayout.LayoutParams(dp(8), 1));
 
         respondButton = button("답변 받기", true);
+        respondButton.setTextSize(16);
         respondButton.setOnClickListener(v -> manualSendNow());
         row.addView(respondButton, new LinearLayout.LayoutParams(0, dp(52), 1));
 
@@ -634,14 +635,13 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
                     }
                 }
 
-                // 버튼 방식에서는 침묵만으로 끊지 않습니다.
-                // 단, 너무 긴 녹음은 안전을 위해 자동 전송합니다.
+                // v3.3: 버튼 방식에서는 침묵만으로 자동 전송하지 않습니다.
+                // 단, 너무 긴 녹음은 안전상 자동 전송합니다.
                 if(speechDetected && elapsed>MAX_RECORD_MS){
                     stopRecordingAndSend();
                     return;
                 }
 
-                // 아무 말도 없으면 서버로 보내지 않고 녹음만 계속 유지합니다.
                 if(!speechDetected && elapsed>15000){
                     setCallState("듣는 중");
                     setStatus("대기 중");
