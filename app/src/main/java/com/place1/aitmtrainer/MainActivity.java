@@ -293,7 +293,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         LinearLayout actionPanel = new LinearLayout(this);
         actionPanel.setOrientation(LinearLayout.VERTICAL);
         actionPanel.setPadding(0, dp(8), 0, 0);
-        actionPanel.setBackground(Color.TRANSPARENT);
+        actionPanel.setBackgroundColor(Color.TRANSPARENT);
         callWrapper.addView(actionPanel, new LinearLayout.LayoutParams(-1, -2));
 
         respondButton = button("답변 받기", true);
