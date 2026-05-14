@@ -30,7 +30,7 @@ import java.util.Locale;
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
     private static final int REQ_AUDIO = 100;
 
-    private LinearLayout setupPanel, callPanel;
+    private LinearLayout setupPanel, callPanel, callWrapper;
     private EditText serverEdit, employeeEdit;
     private Spinner positionSpinner, customerTypeSpinner, difficultySpinner;
     private TextView statusView, callStateView, callMetaView, goalView, timerView, micHintView;
@@ -96,170 +96,289 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(246, 248, 252));
-        root.setPadding(dp(16), dp(10), dp(16), dp(14));
+        root.setPadding(dp(14), dp(8), dp(14), dp(10));
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setGravity(Gravity.CENTER_HORIZONTAL);
+        header.setPadding(0, dp(2), 0, dp(8));
+        root.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
         TextView title = new TextView(this);
-        title.setText("AI TM 콜드콜 트레이닝");
-        title.setTextSize(23);
+        title.setText("AI TM Trainer");
+        title.setTextSize(25);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(Color.rgb(15,23,42));
-        root.addView(title);
+        title.setTextColor(Color.rgb(30,64,175));
+        title.setGravity(Gravity.CENTER);
+        header.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
         TextView sub = new TextView(this);
         sub.setText("v3.4.1 UI 확정 반영 · 첫 번째 시안 적용 완료");
-        sub.setTextSize(14);
+        sub.setTextSize(13);
         sub.setTextColor(Color.rgb(100,116,139));
-        sub.setPadding(0, dp(4), 0, dp(10));
-        root.addView(sub);
+        sub.setGravity(Gravity.CENTER);
+        sub.setPadding(0, dp(2), 0, 0);
+        header.addView(sub, new LinearLayout.LayoutParams(-1, -2));
 
         ScrollView setupScroll = new ScrollView(this);
-        setupScroll.setFillViewport(true);
+        setupScroll.setFillViewport(false);
+        setupScroll.setClipToPadding(false);
+        setupScroll.setPadding(0, 0, 0, dp(6));
         setupPanel = new LinearLayout(this);
         setupPanel.setOrientation(LinearLayout.VERTICAL);
-        setupPanel.setPadding(dp(18), dp(18), dp(18), dp(18));
-        setupPanel.setBackground(cardBg(Color.WHITE));
+        setupPanel.setPadding(0, 0, 0, dp(18));
         setupScroll.addView(setupPanel, new ScrollView.LayoutParams(-1, -2));
-        root.addView(setupScroll, new LinearLayout.LayoutParams(-1,0,1));
+        root.addView(setupScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        setupPanel.addView(label("서버 주소"));
+        LinearLayout welcomeCard = card();
+        TextView welcomeTitle = titleText("콜드콜 훈련 시작", 21, Color.rgb(15,23,42));
+        TextView welcomeBody = bodyText("실전처럼 연습하고, 바로 피드백을 받으세요.");
+        welcomeCard.addView(welcomeTitle);
+        welcomeCard.addView(welcomeBody);
+        addCard(setupPanel, welcomeCard, 0, dp(10));
+
+        LinearLayout serverCard = card();
+        serverCard.addView(titleText("서버 주소", 17, Color.rgb(15,23,42)));
+        LinearLayout serverRow = new LinearLayout(this);
+        serverRow.setOrientation(LinearLayout.HORIZONTAL);
+        serverRow.setGravity(Gravity.CENTER_VERTICAL);
+        serverRow.setPadding(0, dp(8), 0, 0);
         serverEdit = input();
         serverEdit.setText(prefs.getString("server_url", "http://172.30.0.53:8031"));
-        setupPanel.addView(serverEdit);
-
-        Button loadButton = button("서버 연결 / 포지션 / 유형 불러오기", true);
+        serverRow.addView(serverEdit, new LinearLayout.LayoutParams(0, dp(50), 1));
+        Button loadButton = button("연결 확인", false);
+        loadButton.setTextSize(14);
         loadButton.setOnClickListener(v -> { saveServerUrl(); loadInitialData(); });
-        setupPanel.addView(loadButton);
+        LinearLayout.LayoutParams loadLp = new LinearLayout.LayoutParams(dp(102), dp(50));
+        loadLp.leftMargin = dp(8);
+        serverRow.addView(loadButton, loadLp);
+        serverCard.addView(serverRow);
+        addCard(setupPanel, serverCard, 0, dp(10));
 
-        setupPanel.addView(sectionTitle("훈련 설정"));
-
-        setupPanel.addView(label("이름"));
-        employeeEdit = input();
-        employeeEdit.setHint("예: 김민수");
-        employeeEdit.setText(prefs.getString("employee_name", ""));
-        setupPanel.addView(employeeEdit);
-
-        setupPanel.addView(label("포지션"));
+        LinearLayout settingCard = card();
+        settingCard.addView(titleText("훈련 설정", 17, Color.rgb(15,23,42)));
         positionSpinner = spinner();
-        setupPanel.addView(positionSpinner);
-
-        setupPanel.addView(label("고객 유형"));
         customerTypeSpinner = spinner();
-        setupPanel.addView(customerTypeSpinner);
-
-        setupPanel.addView(label("난이도"));
         difficultySpinner = spinner();
         ArrayList<String> levels = new ArrayList<>();
         levels.add("초급");
         levels.add("중급");
         levels.add("고급");
         difficultySpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, levels));
-        setupPanel.addView(difficultySpinner);
+        settingCard.addView(formRow("포지션", positionSpinner));
+        settingCard.addView(formRow("고객유형", customerTypeSpinner));
+        settingCard.addView(formRow("난이도", difficultySpinner));
+        addCard(setupPanel, settingCard, 0, dp(10));
 
+        LinearLayout employeeCard = card();
+        employeeCard.addView(titleText("훈련자 정보", 17, Color.rgb(15,23,42)));
+        employeeEdit = input();
+        employeeEdit.setHint("예: 김민수");
+        employeeEdit.setText(prefs.getString("employee_name", ""));
+        employeeCard.addView(formRow("이름", employeeEdit));
+        addCard(setupPanel, employeeCard, 0, dp(10));
+
+        LinearLayout goalCard = card();
+        goalCard.addView(titleText("이번 세션 목표", 17, Color.rgb(15,23,42)));
         goalView = infoBox("서버 연결 버튼을 눌러 포지션과 고객유형을 불러오세요.");
-        setupPanel.addView(goalView);
+        LinearLayout.LayoutParams goalLp = new LinearLayout.LayoutParams(-1, -2);
+        goalLp.topMargin = dp(8);
+        goalCard.addView(goalView, goalLp);
+        TextView helperGoal = bodyText("자료 전송 동의 · 팀장 연결 유도 · 재통화 일정 확정 · 반론 대응 연습");
+        helperGoal.setPadding(0, dp(8), 0, 0);
+        goalCard.addView(helperGoal);
+        addCard(setupPanel, goalCard, 0, dp(12));
 
-        Button startButton = button("시작하기", true);
+        Button startButton = button("훈련 시작하기", true);
+        startButton.setTextSize(20);
         startButton.setOnClickListener(v -> startSession());
-        LinearLayout.LayoutParams startLp = new LinearLayout.LayoutParams(-1, dp(56));
-        startLp.topMargin = dp(16);
+        LinearLayout.LayoutParams startLp = new LinearLayout.LayoutParams(-1, dp(62));
+        startLp.bottomMargin = dp(10);
         setupPanel.addView(startButton, startLp);
 
+        LinearLayout secondaryRow = new LinearLayout(this);
+        secondaryRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button customerButton = button("고객유형 관리", false);
+        Button recordButton = button("훈련 기록", false);
+        secondaryRow.addView(customerButton, new LinearLayout.LayoutParams(0, dp(52), 1));
+        Space secondaryGap = new Space(this);
+        secondaryRow.addView(secondaryGap, new LinearLayout.LayoutParams(dp(10), 1));
+        secondaryRow.addView(recordButton, new LinearLayout.LayoutParams(0, dp(52), 1));
+        setupPanel.addView(secondaryRow, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView setupHelper = infoBox("음성 녹음 방식: MediaRecorder · 버튼형 응답");
+        setupHelper.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams setupHelperLp = new LinearLayout.LayoutParams(-1, -2);
+        setupHelperLp.topMargin = dp(10);
+        setupPanel.addView(setupHelper, setupHelperLp);
+
+        callWrapper = new LinearLayout(this);
+        callWrapper.setOrientation(LinearLayout.VERTICAL);
+        callWrapper.setVisibility(View.GONE);
+        root.addView(callWrapper, new LinearLayout.LayoutParams(-1, 0, 1));
+
         ScrollView callScroll = new ScrollView(this);
-        callScroll.setFillViewport(true);
-        callScroll.setVisibility(View.GONE);
+        callScroll.setFillViewport(false);
+        callScroll.setClipToPadding(false);
+        callScroll.setPadding(0, 0, 0, dp(8));
         callPanel = new LinearLayout(this);
         callPanel.setOrientation(LinearLayout.VERTICAL);
         callPanel.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        callPanel.setPadding(0, dp(8), 0, dp(24));
+        callPanel.setPadding(0, 0, 0, dp(10));
         callScroll.addView(callPanel, new ScrollView.LayoutParams(-1, -2));
-        root.addView(callScroll, new LinearLayout.LayoutParams(-1,0,1));
+        callWrapper.addView(callScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        LinearLayout sessionCard = new LinearLayout(this);
-        sessionCard.setOrientation(LinearLayout.VERTICAL);
-        sessionCard.setPadding(dp(18), dp(18), dp(18), dp(18));
-        sessionCard.setBackground(cardBg(Color.WHITE));
-        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(-1, -2);
-        cardLp.bottomMargin = dp(14);
-        callPanel.addView(sessionCard, cardLp);
+        LinearLayout sessionCard = card();
+        sessionCard.addView(titleText("세션 정보", 16, Color.rgb(37,99,235)));
+        callMetaView = bodyText("포지션: -\n고객유형: -\n난이도: -\n훈련자: -");
+        callMetaView.setTextColor(Color.rgb(15,23,42));
+        callMetaView.setTypeface(Typeface.DEFAULT_BOLD);
+        callMetaView.setPadding(0, dp(8), 0, 0);
+        sessionCard.addView(callMetaView);
+        addCard(callPanel, sessionCard, 0, dp(10));
 
-        TextView sessionTitle = new TextView(this);
-        sessionTitle.setText("세션 정보");
-        sessionTitle.setTextSize(16);
-        sessionTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        sessionTitle.setTextColor(Color.rgb(15,23,42));
-        sessionTitle.setPadding(0,0,0,dp(12));
-        sessionCard.addView(sessionTitle);
-
-        callMetaView = centeredText(15, Color.rgb(15,23,42), true);
-        callMetaView.setBackground(inputBg());
-        callMetaView.setPadding(dp(14), dp(12), dp(14), dp(12));
-        sessionCard.addView(callMetaView, new LinearLayout.LayoutParams(-1,-2));
-
-        LinearLayout timerCard = new LinearLayout(this);
-        timerCard.setOrientation(LinearLayout.VERTICAL);
-        timerCard.setGravity(Gravity.CENTER_HORIZONTAL);
-        timerCard.setPadding(dp(22), dp(22), dp(22), dp(22));
-        timerCard.setBackground(cardBg(Color.WHITE));
-        LinearLayout.LayoutParams timerCardLp = new LinearLayout.LayoutParams(-1, -2);
-        timerCardLp.bottomMargin = dp(14);
-        callPanel.addView(timerCard, timerCardLp);
-
-        TextView timerLabel = centeredText(14, Color.rgb(100,116,139), false);
-        timerLabel.setText("경과 시간");
-        timerCard.addView(timerLabel);
-
-        timerView = centeredText(52, Color.rgb(37,99,235), true);
+        LinearLayout statsRow = new LinearLayout(this);
+        statsRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout timeCard = compactCard();
+        timeCard.addView(titleText("경과 시간", 15, Color.rgb(37,99,235)));
+        timerView = centeredText(38, Color.rgb(15,23,42), true);
         timerView.setText("00:00");
-        timerView.setPadding(0, dp(8), 0, dp(10));
-        timerCard.addView(timerView);
-
-        callStateView = centeredText(30, Color.rgb(15,23,42), true);
+        timerView.setPadding(0, dp(6), 0, 0);
+        timeCard.addView(timerView);
+        statsRow.addView(timeCard, new LinearLayout.LayoutParams(0, -2, 1));
+        Space statsGap = new Space(this);
+        statsRow.addView(statsGap, new LinearLayout.LayoutParams(dp(10), 1));
+        LinearLayout stateCard = compactCard();
+        stateCard.addView(titleText("현재 상태", 15, Color.rgb(13,148,136)));
+        callStateView = centeredText(24, Color.rgb(13,148,136), true);
         callStateView.setText("대기 중");
-        timerCard.addView(callStateView);
+        callStateView.setPadding(0, dp(10), 0, 0);
+        stateCard.addView(callStateView);
+        statsRow.addView(stateCard, new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout.LayoutParams statsLp = new LinearLayout.LayoutParams(-1, -2);
+        statsLp.bottomMargin = dp(10);
+        callPanel.addView(statsRow, statsLp);
 
-        micHintView = centeredText(15, Color.rgb(100,116,139), false);
-        micHintView.setText("말을 마친 뒤 답변 받기 버튼을 누르세요");
-        micHintView.setPadding(0, dp(12), 0, 0);
-        timerCard.addView(micHintView);
-
-        TextView guide = infoBox("텍스트는 표시하지 않습니다.\nAI가 말한 뒤 자동으로 녹음됩니다.\n상담원이 말한 뒤 '답변 받기' 버튼을 누르면 바로 응답을 준비합니다.");
-        guide.setGravity(Gravity.CENTER);
+        TextView guide = infoBox("고객 음성을 들은 뒤 상담원이 말하고, 발화를 마치면 아래 답변 받기 버튼을 눌러 응답을 받습니다.");
+        guide.setTextSize(15);
         LinearLayout.LayoutParams guideLp = new LinearLayout.LayoutParams(-1, -2);
-        guideLp.bottomMargin = dp(14);
+        guideLp.bottomMargin = dp(10);
         callPanel.addView(guide, guideLp);
 
+        LinearLayout customerCard = card();
+        TextView customerLine = bodyText("고객 음성 재생 후 자동 녹음이 시작됩니다.");
+        customerLine.setTextColor(Color.rgb(15,23,42));
+        customerCard.addView(customerLine);
+        micHintView = infoBox("녹음 대기");
+        micHintView.setTextColor(Color.rgb(220,38,38));
+        micHintView.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams micLp = new LinearLayout.LayoutParams(-1, -2);
+        micLp.topMargin = dp(8);
+        customerCard.addView(micHintView, micLp);
+        addCard(callPanel, customerCard, 0, dp(10));
+
+        LinearLayout statusCard = card();
+        statusCard.addView(titleText("상태 표시", 16, Color.rgb(13,148,136)));
+        statusView = infoBox("상태: 준비 중\n마이크: 대기\n녹음 방식: MediaRecorder\n서버 응답: 확인 전");
+        statusView.setTextSize(14);
+        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(-1, -2);
+        statusLp.topMargin = dp(8);
+        statusCard.addView(statusView, statusLp);
+        addCard(callPanel, statusCard, 0, dp(10));
+
+        TextView footerGuide = bodyText("자동 말끝 감지 대신 버튼으로 발화 종료를 확정합니다.");
+        footerGuide.setGravity(Gravity.CENTER);
+        callPanel.addView(footerGuide, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout actionPanel = new LinearLayout(this);
+        actionPanel.setOrientation(LinearLayout.VERTICAL);
+        actionPanel.setPadding(0, dp(8), 0, 0);
+        actionPanel.setBackground(Color.TRANSPARENT);
+        callWrapper.addView(actionPanel, new LinearLayout.LayoutParams(-1, -2));
+
         respondButton = button("답변 받기", true);
-        respondButton.setTextSize(21);
+        respondButton.setTextSize(22);
         respondButton.setMinHeight(dp(66));
         respondButton.setOnClickListener(v -> manualSendNow());
-        LinearLayout.LayoutParams respondLp = new LinearLayout.LayoutParams(-1, dp(66));
-        respondLp.bottomMargin = dp(14);
-        callPanel.addView(respondButton, respondLp);
+        LinearLayout.LayoutParams respondLp = new LinearLayout.LayoutParams(-1, dp(68));
+        respondLp.bottomMargin = dp(10);
+        actionPanel.addView(respondButton, respondLp);
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
-        rowLp.bottomMargin = dp(14);
-        callPanel.addView(row, rowLp);
+        actionPanel.addView(row, new LinearLayout.LayoutParams(-1, -2));
 
         pauseButton = button("일시정지", false);
         pauseButton.setOnClickListener(v -> togglePause());
-        row.addView(pauseButton, new LinearLayout.LayoutParams(0, dp(56), 1));
+        row.addView(pauseButton, new LinearLayout.LayoutParams(0, dp(54), 1));
 
         Space sp = new Space(this);
         row.addView(sp, new LinearLayout.LayoutParams(dp(10), 1));
 
-        Button finishButton = button("종료 / 평가", false);
+        Button finishButton = button("종료 · 평가", false);
+        finishButton.setTextColor(Color.rgb(220,38,38));
+        finishButton.setBackground(dangerOutlineButtonBg());
         finishButton.setOnClickListener(v -> finishSession());
-        row.addView(finishButton, new LinearLayout.LayoutParams(0, dp(56), 1));
-
-        statusView = centeredText(16, Color.rgb(37,99,235), true);
-        statusView.setText("상태: 준비 중");
-        statusView.setBackground(infoBg());
-        statusView.setPadding(dp(16), dp(14), dp(16), dp(14));
-        callPanel.addView(statusView, new LinearLayout.LayoutParams(-1,-2));
+        row.addView(finishButton, new LinearLayout.LayoutParams(0, dp(54), 1));
 
         setContentView(root);
+    }
+
+    private LinearLayout card() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setPadding(dp(16), dp(14), dp(16), dp(14));
+        l.setBackground(cardBg(Color.WHITE));
+        return l;
+    }
+
+    private LinearLayout compactCard() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setGravity(Gravity.CENTER_HORIZONTAL);
+        l.setPadding(dp(12), dp(12), dp(12), dp(12));
+        l.setBackground(cardBg(Color.WHITE));
+        return l;
+    }
+
+    private void addCard(LinearLayout parent, View child, int top, int bottom) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = top;
+        lp.bottomMargin = bottom;
+        parent.addView(child, lp);
+    }
+
+    private TextView titleText(String text, int size, int color) {
+        TextView v = new TextView(this);
+        v.setText(text);
+        v.setTextSize(size);
+        v.setTypeface(Typeface.DEFAULT_BOLD);
+        v.setTextColor(color);
+        return v;
+    }
+
+    private TextView bodyText(String text) {
+        TextView v = new TextView(this);
+        v.setText(text);
+        v.setTextSize(14);
+        v.setTextColor(Color.rgb(71,85,105));
+        v.setLineSpacing(dp(2), 1.0f);
+        return v;
+    }
+
+    private LinearLayout formRow(String label, View field) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(8), 0, 0);
+        TextView labelView = new TextView(this);
+        labelView.setText(label);
+        labelView.setTextSize(14);
+        labelView.setTypeface(Typeface.DEFAULT_BOLD);
+        labelView.setTextColor(Color.rgb(52,64,84));
+        row.addView(labelView, new LinearLayout.LayoutParams(dp(82), -2));
+        row.addView(field, new LinearLayout.LayoutParams(0, dp(50), 1));
+        return row;
     }
 
     private TextView centeredText(int size, int color, boolean bold) {
@@ -333,7 +452,8 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private GradientDrawable cardBg(int color){GradientDrawable g=new GradientDrawable();g.setColor(color);g.setCornerRadius(dp(18));g.setStroke(1,Color.rgb(226,232,240));return g;}
     private GradientDrawable inputBg(){GradientDrawable g=new GradientDrawable();g.setColor(Color.WHITE);g.setCornerRadius(dp(12));g.setStroke(1,Color.rgb(203,213,225));return g;}
     private GradientDrawable buttonBg(){GradientDrawable g=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{Color.rgb(37,99,235),Color.rgb(59,130,246)});g.setCornerRadius(dp(16));return g;}
-    private GradientDrawable outlineButtonBg(){GradientDrawable g=new GradientDrawable();g.setColor(Color.WHITE);g.setCornerRadius(dp(16));g.setStroke(1,Color.rgb(226,232,240));return g;}
+    private GradientDrawable outlineButtonBg(){GradientDrawable g=new GradientDrawable();g.setColor(Color.WHITE);g.setCornerRadius(dp(16));g.setStroke(1,Color.rgb(191,219,254));return g;}
+    private GradientDrawable dangerOutlineButtonBg(){GradientDrawable g=new GradientDrawable();g.setColor(Color.WHITE);g.setCornerRadius(dp(16));g.setStroke(1,Color.rgb(248,113,113));return g;}
     private GradientDrawable infoBg(){GradientDrawable g=new GradientDrawable();g.setColor(Color.rgb(248,250,252));g.setCornerRadius(dp(16));g.setStroke(1,Color.rgb(226,232,240));return g;}
     private int dp(int v){return (int)(v*getResources().getDisplayMetrics().density+0.5f);}
 
@@ -511,10 +631,10 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
         runOnUiThread(() -> {
             ((View)setupPanel.getParent()).setVisibility(View.GONE);
-            ((View)callPanel.getParent()).setVisibility(View.VISIBLE);
+            callWrapper.setVisibility(View.VISIBLE);
             setupPanel.setVisibility(View.GONE);
             callPanel.setVisibility(View.VISIBLE);
-            callMetaView.setText(selectedPositionName()+" / "+selectedCustomerTypeName()+" / "+difficultySpinner.getSelectedItem());
+            callMetaView.setText("포지션: "+selectedPositionName()+"\n고객유형: "+selectedCustomerTypeName()+"\n난이도: "+difficultySpinner.getSelectedItem()+"\n훈련자: "+employee);
             pauseButton.setText("일시정지");
             startTimer();
             setCallState("연결 중");
@@ -832,7 +952,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
             runOnUiThread(() -> {
                 Toast.makeText(this,"훈련 종료 / 통화시간 "+duration+"초",Toast.LENGTH_LONG).show();
                 ((View)setupPanel.getParent()).setVisibility(View.VISIBLE);
-                ((View)callPanel.getParent()).setVisibility(View.GONE);
+                callWrapper.setVisibility(View.GONE);
                 setupPanel.setVisibility(View.VISIBLE);
                 callPanel.setVisibility(View.GONE);
             });
