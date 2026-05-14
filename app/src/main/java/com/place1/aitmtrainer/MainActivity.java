@@ -30,8 +30,9 @@ import java.util.Locale;
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
     private static final int REQ_AUDIO = 100;
 
-    private LinearLayout setupPanel, setupWrapper, callPanel, callWrapper;
-    private EditText serverEdit, employeeEdit;
+    private LinearLayout loginWrapper, setupPanel, setupWrapper, callPanel, callWrapper;
+    private EditText loginNameEdit, serverEdit;
+    private TextView loginStatusView, loggedInNameView;
     private Spinner positionSpinner, customerTypeSpinner, difficultySpinner;
     private TextView statusView, callStateView, callMetaView, goalView, timerView, micHintView;
     private Button pauseButton;
@@ -106,8 +107,8 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
         if (android.os.Build.VERSION.SDK_INT >= 20) {
             root.setOnApplyWindowInsetsListener((v, insets) -> {
-                int top = Math.max(dp(8), insets.getSystemWindowInsetTop());
-                int bottom = Math.max(dp(14), insets.getSystemWindowInsetBottom());
+                int top = Math.max(dp(10), insets.getSystemWindowInsetTop() + dp(4));
+                int bottom = Math.max(dp(16), insets.getSystemWindowInsetBottom() + dp(8));
                 v.setPadding(dp(14), top, dp(14), bottom);
                 return insets;
             });
@@ -128,16 +129,62 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         header.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
         TextView sub = new TextView(this);
-        sub.setText("v3.4.1 UI 확정 반영 · 모바일 화면 최적화");
-        sub.setTextSize(12);
+        sub.setText("V3.4.1");
+        sub.setTextSize(13);
         sub.setTextColor(Color.rgb(100,116,139));
         sub.setGravity(Gravity.CENTER);
         sub.setPadding(0, dp(1), 0, 0);
         header.addView(sub, new LinearLayout.LayoutParams(-1, -2));
 
+        boolean loggedIn = prefs.getBoolean("logged_in", false) && prefs.getString("employee_name", "").trim().length() > 0;
+
+        loginWrapper = new LinearLayout(this);
+        loginWrapper.setOrientation(LinearLayout.VERTICAL);
+        loginWrapper.setVisibility(loggedIn ? View.GONE : View.VISIBLE);
+        root.addView(loginWrapper, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        ScrollView loginScroll = new ScrollView(this);
+        loginScroll.setFillViewport(true);
+        loginScroll.setClipToPadding(false);
+        LinearLayout loginPanel = new LinearLayout(this);
+        loginPanel.setOrientation(LinearLayout.VERTICAL);
+        loginPanel.setGravity(Gravity.CENTER_VERTICAL);
+        loginPanel.setPadding(0, dp(8), 0, dp(8));
+        loginScroll.addView(loginPanel, new ScrollView.LayoutParams(-1, -1));
+        loginWrapper.addView(loginScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        LinearLayout loginWelcome = card();
+        loginWelcome.addView(titleText("콜드콜 훈련 로그인", 21, Color.rgb(15,23,42)));
+        TextView loginWelcomeBody = bodyText("훈련자 정보를 한 번만 입력하면 이후에는 바로 훈련을 시작할 수 있습니다.");
+        loginWelcomeBody.setPadding(0, dp(6), 0, 0);
+        loginWelcome.addView(loginWelcomeBody);
+        addCard(loginPanel, loginWelcome, 0, dp(10));
+
+        LinearLayout loginCard = card();
+        loginCard.addView(titleText("훈련자 로그인", 17, Color.rgb(15,23,42)));
+        loginNameEdit = input();
+        loginNameEdit.setHint("이름 또는 사번을 입력하세요");
+        loginNameEdit.setText(prefs.getString("employee_name", ""));
+        loginCard.addView(formRow("훈련자", loginNameEdit));
+
+        Button loginButton = button("로그인", true);
+        loginButton.setTextSize(18);
+        loginButton.setOnClickListener(v -> doLogin());
+        LinearLayout.LayoutParams loginBtnLp = new LinearLayout.LayoutParams(-1, dp(56));
+        loginBtnLp.topMargin = dp(12);
+        loginCard.addView(loginButton, loginBtnLp);
+
+        loginStatusView = infoBox("서버 주소는 로그인 후 메인 화면에서 확인할 수 있습니다.");
+        loginStatusView.setGravity(Gravity.CENTER);
+        loginStatusView.setTextSize(12);
+        LinearLayout.LayoutParams loginStatusLp = new LinearLayout.LayoutParams(-1, -2);
+        loginStatusLp.topMargin = dp(10);
+        loginCard.addView(loginStatusView, loginStatusLp);
+        addCard(loginPanel, loginCard, 0, dp(10));
+
         setupWrapper = new LinearLayout(this);
         setupWrapper.setOrientation(LinearLayout.VERTICAL);
-        setupWrapper.setVisibility(View.VISIBLE);
+        setupWrapper.setVisibility(loggedIn ? View.VISIBLE : View.GONE);
         root.addView(setupWrapper, new LinearLayout.LayoutParams(-1, 0, 1));
 
         ScrollView setupScroll = new ScrollView(this);
@@ -156,6 +203,21 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         welcomeCard.addView(welcomeTitle);
         welcomeCard.addView(welcomeBody);
         addCard(setupPanel, welcomeCard, 0, dp(8));
+
+        LinearLayout loginInfoCard = card();
+        LinearLayout loginInfoRow = new LinearLayout(this);
+        loginInfoRow.setOrientation(LinearLayout.HORIZONTAL);
+        loginInfoRow.setGravity(Gravity.CENTER_VERTICAL);
+        loggedInNameView = bodyText("로그인: " + prefs.getString("employee_name", "-"));
+        loggedInNameView.setTextColor(Color.rgb(15,23,42));
+        loggedInNameView.setTypeface(Typeface.DEFAULT_BOLD);
+        loginInfoRow.addView(loggedInNameView, new LinearLayout.LayoutParams(0, -2, 1));
+        Button logoutButton = button("로그아웃", false);
+        logoutButton.setTextSize(12);
+        logoutButton.setOnClickListener(v -> logout());
+        loginInfoRow.addView(logoutButton, new LinearLayout.LayoutParams(dp(92), dp(42)));
+        loginInfoCard.addView(loginInfoRow);
+        addCard(setupPanel, loginInfoCard, 0, dp(8));
 
         LinearLayout serverCard = card();
         serverCard.addView(titleText("서버 주소", 16, Color.rgb(15,23,42)));
@@ -190,23 +252,14 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         settingCard.addView(formRow("난이도", difficultySpinner));
         addCard(setupPanel, settingCard, 0, dp(8));
 
-        LinearLayout employeeCard = card();
-        employeeCard.addView(titleText("훈련자 정보", 16, Color.rgb(15,23,42)));
-        employeeEdit = input();
-        employeeEdit.setHint("예: 김민수");
-        employeeEdit.setText(prefs.getString("employee_name", ""));
-        employeeCard.addView(formRow("이름", employeeEdit));
-        addCard(setupPanel, employeeCard, 0, dp(8));
-
         LinearLayout goalCard = card();
         goalCard.addView(titleText("이번 세션 목표", 16, Color.rgb(15,23,42)));
-        goalView = infoBox("서버 연결 버튼을 눌러 포지션과 고객유형을 불러오세요.");
+        goalView = infoBox(defaultGoalText(currentPositionCode));
+        goalView.setTextSize(12);
+        goalView.setLineSpacing(dp(3), 1.0f);
         LinearLayout.LayoutParams goalLp = new LinearLayout.LayoutParams(-1, -2);
         goalLp.topMargin = dp(7);
         goalCard.addView(goalView, goalLp);
-        TextView helperGoal = bodyText("자료 전송 동의 · 팀장 연결 유도 · 재통화 일정 확정 · 반론 대응 연습");
-        helperGoal.setPadding(0, dp(7), 0, 0);
-        goalCard.addView(helperGoal);
         addCard(setupPanel, goalCard, 0, dp(8));
 
         LinearLayout setupActionPanel = new LinearLayout(this);
@@ -220,18 +273,6 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         LinearLayout.LayoutParams startLp = new LinearLayout.LayoutParams(-1, dp(56));
         startLp.bottomMargin = dp(7);
         setupActionPanel.addView(startButton, startLp);
-
-        LinearLayout secondaryRow = new LinearLayout(this);
-        secondaryRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button customerButton = button("고객유형 관리", false);
-        customerButton.setTextSize(13);
-        Button recordButton = button("훈련 기록", false);
-        recordButton.setTextSize(13);
-        secondaryRow.addView(customerButton, new LinearLayout.LayoutParams(0, dp(44), 1));
-        Space secondaryGap = new Space(this);
-        secondaryRow.addView(secondaryGap, new LinearLayout.LayoutParams(dp(8), 1));
-        secondaryRow.addView(recordButton, new LinearLayout.LayoutParams(0, dp(44), 1));
-        setupActionPanel.addView(secondaryRow, new LinearLayout.LayoutParams(-1, -2));
 
         TextView setupHelper = infoBox("음성 녹음 방식: MediaRecorder · 버튼형 응답");
         setupHelper.setGravity(Gravity.CENTER);
@@ -270,7 +311,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         statsRow.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout timeCard = compactCard();
         timeCard.addView(titleText("경과 시간", 14, Color.rgb(37,99,235)));
-        timerView = centeredText(32, Color.rgb(15,23,42), true);
+        timerView = centeredText(30, Color.rgb(15,23,42), true);
         timerView.setText("00:00");
         timerView.setPadding(0, dp(4), 0, 0);
         timeCard.addView(timerView);
@@ -279,7 +320,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         statsRow.addView(statsGap, new LinearLayout.LayoutParams(dp(8), 1));
         LinearLayout stateCard = compactCard();
         stateCard.addView(titleText("현재 상태", 14, Color.rgb(13,148,136)));
-        callStateView = centeredText(20, Color.rgb(13,148,136), true);
+        callStateView = centeredText(19, Color.rgb(13,148,136), true);
         callStateView.setText("대기 중");
         callStateView.setPadding(0, dp(6), 0, 0);
         stateCard.addView(callStateView);
@@ -356,6 +397,27 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         row.addView(finishButton, new LinearLayout.LayoutParams(0, dp(46), 1));
 
         setContentView(root);
+    }
+
+    private void doLogin() {
+        String name = loginNameEdit == null ? "" : loginNameEdit.getText().toString().trim();
+        if (name.length() == 0) {
+            Toast.makeText(this, "훈련자 이름 또는 사번을 입력하세요.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        prefs.edit().putBoolean("logged_in", true).putString("employee_name", name).apply();
+        Toast.makeText(this, name + "님 로그인 완료", Toast.LENGTH_SHORT).show();
+        if (loggedInNameView != null) loggedInNameView.setText("로그인: " + name);
+        if (loginWrapper != null) loginWrapper.setVisibility(View.GONE);
+        if (setupWrapper != null) setupWrapper.setVisibility(View.VISIBLE);
+    }
+
+    private void logout() {
+        prefs.edit().putBoolean("logged_in", false).apply();
+        if (callWrapper != null) callWrapper.setVisibility(View.GONE);
+        if (setupWrapper != null) setupWrapper.setVisibility(View.GONE);
+        if (loginWrapper != null) loginWrapper.setVisibility(View.VISIBLE);
+        if (loginNameEdit != null) loginNameEdit.setText(prefs.getString("employee_name", ""));
     }
 
     private LinearLayout card() {
@@ -589,17 +651,65 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private void updateGoalText(){
         try{
             JSONObject p=currentPositionObject();
-            if(p==null)return;
-            JSONArray goals=p.optJSONArray("goals");
             ArrayList<String> names=new ArrayList<>();
-            if(goals!=null){
-                for(int i=0;i<goals.length();i++){
-                    JSONObject g=goals.getJSONObject(i);
-                    if(g.optInt("is_active",1)==1&&g.optInt("is_core",1)==1)names.add(g.optString("title",""));
+            if(p!=null){
+                JSONArray goals=p.optJSONArray("goals");
+                if(goals!=null){
+                    for(int i=0;i<goals.length();i++){
+                        JSONObject g=goals.getJSONObject(i);
+                        if(g.optInt("is_active",1)==1 && g.optInt("is_core",1)==1) {
+                            String title = g.optString("title","");
+                            if(title.length()>0) names.add(title);
+                        }
+                    }
                 }
             }
-            runOnUiThread(() -> goalView.setText("목표: "+join(names," · ")));
-        }catch(Exception ignored){}
+            final String text = names.size()>0 ? numberedGoalText(names) : defaultGoalText(currentPositionCode);
+            runOnUiThread(() -> goalView.setText(text));
+        }catch(Exception ignored){
+            runOnUiThread(() -> goalView.setText(defaultGoalText(currentPositionCode)));
+        }
+    }
+
+    private String numberedGoalText(ArrayList<String> names){
+        StringBuilder sb = new StringBuilder();
+        for(int i=0;i<names.size();i++){
+            if(i>0) sb.append("\n\n");
+            String title = names.get(i);
+            sb.append(i+1).append(". ").append(title).append("\n");
+            sb.append("   ").append(goalDescription(title));
+        }
+        return sb.toString();
+    }
+
+    private String goalDescription(String title){
+        if(title.contains("자료")) return "고객에게 자료를 보내도 되는지 명확히 동의 받습니다.";
+        if(title.contains("팀장")) return "관심 신호가 나오면 팀장 연결로 자연스럽게 전환합니다.";
+        if(title.contains("재통화") || title.contains("일정")) return "바로 통화가 어렵다면 날짜와 시간을 확정합니다.";
+        if(title.contains("반론") || title.contains("가격") || title.contains("불신")) return "고객 이탈 없이 다음 대화로 이어갑니다.";
+        if(title.contains("니즈")) return "고객 상황과 문제를 깊게 파악합니다.";
+        if(title.contains("제안")) return "고객 니즈에 맞춰 제안 흐름을 구조화합니다.";
+        if(title.contains("클로징") || title.contains("계약")) return "다음 행동을 명확히 만들고 전환을 유도합니다.";
+        return "이번 포지션에서 반드시 확인해야 하는 핵심 행동 기준입니다.";
+    }
+
+    private String defaultGoalText(String code){
+        if("experienced".equals(code)){
+            return "1. 니즈 심화 파악\n   고객의 현재 상황과 마케팅 문제를 구체적으로 확인합니다.\n\n"
+                 + "2. 제안 구조화\n   고객 니즈에 맞춰 설명 순서와 제안 포인트를 정리합니다.\n\n"
+                 + "3. 의사결정자 확인\n   실제 결정권자와 예산·진행 가능성을 확인합니다.\n\n"
+                 + "4. 다음 액션 확정\n   자료, 미팅, 재통화 등 다음 행동을 명확히 약속합니다.";
+        }
+        if("leader".equals(code)){
+            return "1. 핵심 이슈 진단\n   고객이 망설이는 진짜 이유를 빠르게 파악합니다.\n\n"
+                 + "2. 신뢰 형성 및 방향 제시\n   회사 강점과 해결 방향을 짧고 명확하게 전달합니다.\n\n"
+                 + "3. 팀장 통화 전환 완성\n   상담 흐름을 놓치지 않고 결정 단계로 연결합니다.\n\n"
+                 + "4. 후속 액션 확정\n   계약, 자료, 재통화 등 다음 단계를 확정합니다.";
+        }
+        return "1. 자료 전송 동의 받기\n   고객에게 자료를 보내도 되는지 명확히 동의 받습니다.\n\n"
+             + "2. 팀장이 전화를 즉시 이어받게 토스하기\n   관심 신호가 나오면 팀장 통화로 자연스럽게 연결합니다.\n\n"
+             + "3. 재통화 일정 확정하기\n   바로 통화가 어렵다면 날짜와 시간을 확정합니다.\n\n"
+             + "4. 가격·불신·바쁨 반론 대응하기\n   고객 이탈 없이 다음 대화로 이어갑니다.";
     }
 
     private String join(ArrayList<String> arr,String sep){
@@ -650,16 +760,18 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     }
 
     private void startSession(){
-        String employee=employeeEdit.getText().toString().trim();
+        String employee=prefs.getString("employee_name","").trim();
         if(employee.isEmpty()){
-            Toast.makeText(this,"이름을 입력하세요.",Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,"로그인이 필요합니다.",Toast.LENGTH_SHORT).show();
+            if(setupWrapper!=null) setupWrapper.setVisibility(View.GONE);
+            if(loginWrapper!=null) loginWrapper.setVisibility(View.VISIBLE);
             return;
         }
         if(positionSpinner.getSelectedItem()==null||customerTypeSpinner.getSelectedItem()==null){
             Toast.makeText(this,"서버 연결 버튼으로 포지션/유형을 먼저 불러오세요.",Toast.LENGTH_LONG).show();
             return;
         }
-        prefs.edit().putString("employee_name",employee).putString("server_url",server()).apply();
+        prefs.edit().putString("server_url",server()).apply();
         paused=false;finishing=false;sessionId=null;
         callStartMillis=System.currentTimeMillis();
 
